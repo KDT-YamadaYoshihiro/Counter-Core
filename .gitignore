@@ -73,3 +73,8 @@ Plugins/**/Intermediate/*
 
 # Cache files for the editor to use
 DerivedDataCache/*
+/Counter_Core/.github
+/Counter_Core/Binaries/Win64
+/Counter_Core/DerivedDataCache/VT
+/Counter_Core/Intermediate
+/Counter_Core/Saved
