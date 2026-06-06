@@ -73,3 +73,5 @@ Plugins/**/Intermediate/*
 
 # Cache files for the editor to use
 DerivedDataCache/*
+/Counter_Core/Intermediate
+/Counter_Core/Saved/UnrealBuildTool
