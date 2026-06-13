@@ -75,3 +75,6 @@ Plugins/**/Intermediate/*
 DerivedDataCache/*
 /Counter_Core/Intermediate
 /Counter_Core/Saved/UnrealBuildTool
+/Counter_Core/Binaries/Win64
+/Counter_Core/DerivedDataCache/VT
+/Counter_Core/Saved
