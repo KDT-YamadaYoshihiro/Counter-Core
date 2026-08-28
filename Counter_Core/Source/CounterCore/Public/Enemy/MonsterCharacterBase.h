@@ -39,13 +39,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|AI", meta = (ClampMin = "0"))
 	float DetectionRange = 1000.f;
 
-	/** これ以上近づいたら移動をやめて攻撃判断に入る距離（cm）。Run DetectionRadius=70 相当。 */
+	/** 行動ループ内でどのコンボの条件も満たせないときに前進を続ける下限距離（cm）。到達しても攻撃条件次第。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|AI", meta = (ClampMin = "0"))
 	float EngageRange = 300.f;
 
-	/** AI の行動ループ（コンボ ID の並び）。空なら SelectCombo に一任。仕様: 待機→(3)→…→4 のループ。 */
+	/**
+	 * AI の行動ループ（コンボ ID を仕様書の並び順どおりに）。
+	 * 仕様: 待機→(3)→移動→1→移動→1→移動→0→移動→1→移動→2→(3)→移動→0→移動→1→移動→(3)→移動→4。
+	 * () 付き（DT_MonsterCombos の bSkipIfConditionUnmet=true）は条件未達ならその場でスキップ。
+	 * それ以外は移動で間合いを詰めてから発生確率判定。空なら攻撃しない。
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|AI")
 	TArray<FName> ActionLoop;
+
+	/** 行動ループが一周したときに待機で挟む秒数（仕様の「待機」）。0 で無し。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|AI", meta = (ClampMin = "0"))
+	float LoopRestTime = 0.5f;
+
+	/** true で行動ステップ（どのコンボを評価中か・スキップ・発生確率）を画面に Print String 表示。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Debug")
+	bool bPrintAIEvents = true;
 
 	/** 移動速度（cm/s）。CharacterMovement の MaxWalkSpeed に反映。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|AI", meta = (ClampMin = "0"))
@@ -154,6 +167,16 @@ protected:
 	void TickAttack(float Dt);
 	void TickHitstun(float Dt);
 
+	// 行動パターン（仕様書どおり順番に実行）
+	void BeginActionStep();          // ActionLoop[ActionLoopIndex] を評価
+	void AdvanceActionStep();        // 次のステップへ（末尾なら先頭に戻り待機を挟む）
+	void StartCurrentCombo();        // 現在ステップのコンボで攻撃 State へ
+	void LaunchNextAttackInCombo();  // コンボ内の次の一手を撃つ
+	void ResumeAfterHitstun();       // やられ硬直明けの分岐（攻撃5は連鎖しない）
+	bool EvaluateComboCondition(const FMonsterComboData& C) const; // 距離・角度・背後
+	bool RollComboProbability(const FMonsterComboData& C) const;
+	void PrintAI(const FString& Msg, const FColor& Color) const;
+
 	// 攻撃コンポーネントのイベント
 	UFUNCTION()
 	void HandleAttackFinished();
@@ -170,7 +193,6 @@ protected:
 
 private:
 	static int32 StatePriority(EMonsterState S);
-	void AdvanceCombo();
 	int32 CurrentAttackPower() const;
 
 	/** 攻撃判定に使う実体を返す（武器内のシェイプ優先、無ければ内蔵 Hitbox）。 */
@@ -185,14 +207,21 @@ private:
 
 	EMonsterState State = EMonsterState::Idle;
 
+	// 行動パターンの現在位置
+	int32 ActionLoopIndex = 0;
+	FName CurrentComboId = NAME_None;
+	FMonsterComboData CurrentComboData;
+	bool bMovingToEngageCombo = false; // Run 中: 現在コンボの間合いを詰めている
+	float LoopRestTimer = 0.f;         // 一周後の待機
+
 	// 進行中コンボ
 	TArray<FName> CurrentComboAttacks;
 	int32 ComboIndex = 0;
-	int32 ActionLoopIndex = 0;
 
 	// Hitstun
 	float HitstunTimer = 0.f;
 	FVector HitstunKnockbackDir = FVector::ZeroVector;
+	bool bInterruptedAttackNoChain = false; // 中断された攻撃が「やられ連鎖しない」（攻撃5）
 
 	// この攻撃で既にヒットさせた相手（多段ヒット防止、判定ONごとにクリア）
 	UPROPERTY()

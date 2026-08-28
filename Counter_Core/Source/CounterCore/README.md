@@ -13,7 +13,25 @@
 | `FMonsterComboData` | コンボ1つ分（`DT_MonsterCombos` の行構造体） |
 | `UMonsterCombatComponent` | 被ダメージ計算 / スタン蓄積 / 15秒自然解除 / やられ / 死亡。結果はデリゲートで通知 |
 | `UMonsterAttackComponent` | コンボ選択（距離 / 角度 / 背後 / 発生確率）+ 攻撃タイムライン（予兆→軸合わせ停止→判定ON/OFF→硬直→終了）+ 予兆中の軸合わせ回頭 |
-| `AMonsterCharacterBase` | 上記を束ねる敵キャラ本体。内蔵の軽量ステートマシンで全部回す。**武器生成・アタッチ / 攻撃判定 / モンタージュ再生 / ダメージ授受まで C++ 側で完結**（`BP_Enemy` は reparent + ディテール設定だけで動く） |
+| `AMonsterCharacterBase` | 上記を束ねる敵キャラ本体。内蔵の軽量ステートマシン + **行動パターン実行**。武器生成・アタッチ / 攻撃判定 / モンタージュ再生 / ダメージ授受まで C++ 側で完結（`BP_Enemy` は reparent + ディテール設定だけで動く） |
+
+### 行動パターン（仕様書 Monster シート「行動パターン」を順番どおり実行）
+
+`ActionLoop`（コンボ ID の並び）を**先頭から順に**実行する。各ステップ:
+
+- **`()` 付きステップ**（`DT_MonsterCombos.bSkipIfConditionUnmet=true`、= Combo3 背後攻撃）:
+  その場で条件（背後にいるか）を判定し、**未達なら移動せずスキップ**して次のステップへ。
+- **通常ステップ**（Combo0/1/2/4）:
+  そのコンボの `MaxDistanceM` / `MaxAngleDeg` を満たすまで移動（回頭は常時）。
+  満たしたら**発生確率**（`TriggerChancePercent`）を判定 → 成功で発動、**失敗なら次のステップへ**（仕様「発生失敗時、次の攻撃へ遷移」）。
+- コンボ発動後、**コンボ中は移動しない**。1発目で条件成立 → 以降のコンボ内攻撃は条件無視で続行。
+- コンボ完了 → 次のステップ。**やられ割り込みで中断 → 次のステップ**（ただし攻撃5 = `bNoHitstunChain` は連鎖せず攻撃継続）。
+- ループが一周したら `LoopRestTime` 秒だけ待機を挟む。
+- `bPrintAIEvents`（既定 true）で「step N: ComboX → …」を画面と `LogTemp` に出力。
+
+`ActionLoop` は仕様書 50 行目の並び（11 ステップ）を設定済み:
+`Combo3, Combo1, Combo1, Combo0, Combo1, Combo2, Combo3, Combo0, Combo1, Combo3, Combo4`
+（`(3)` が 3 箇所。チームの旧 `DT_EnemyAttackSequence` は 10 ステップで内容が違うが、正は仕様書）。
 
 ### 武器・攻撃判定・可視化（C++ が面倒を見る）
 

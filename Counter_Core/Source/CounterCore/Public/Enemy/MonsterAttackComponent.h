@@ -82,6 +82,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Monster|Attack")
 	FMonsterAttackFrameData GetAttackData(FName AttackId, bool& bFound) const;
 
+	/** 指定コンボの定義を引く。bFound=false なら未定義。 */
+	UFUNCTION(BlueprintCallable, Category = "Monster|Attack")
+	FMonsterComboData GetComboData(FName ComboId, bool& bFound) const;
+
 	UFUNCTION(BlueprintPure, Category = "Monster|Attack")
 	bool IsAttacking() const { return CurrentPhase != EMonsterAttackPhase::None && CurrentPhase != EMonsterAttackPhase::Finished; }
 

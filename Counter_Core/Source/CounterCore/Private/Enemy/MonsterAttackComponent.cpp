@@ -27,6 +27,21 @@ FMonsterAttackFrameData UMonsterAttackComponent::GetAttackData(FName AttackId, b
 	return FMonsterAttackFrameData();
 }
 
+FMonsterComboData UMonsterAttackComponent::GetComboData(FName ComboId, bool& bFound) const
+{
+	bFound = false;
+	if (ComboDataTable)
+	{
+		if (const FMonsterComboData* Row =
+			ComboDataTable->FindRow<FMonsterComboData>(ComboId, TEXT("GetComboData"), false))
+		{
+			bFound = true;
+			return *Row;
+		}
+	}
+	return FMonsterComboData();
+}
+
 TArray<FName> UMonsterAttackComponent::GetComboAttacks(FName ComboId) const
 {
 	if (ComboDataTable)

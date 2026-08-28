@@ -113,6 +113,14 @@ struct FMonsterComboData : public FTableRowBase
 	/** true なら「プレイヤーが背後にいるとき」だけ発動（コンボ3）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Combo")
 	bool bRequireTargetBehind = false;
+
+	/**
+	 * 行動パターンでこのコンボが () 付き（条件付き）のとき true。
+	 * 仕様: 条件未達なら「移動して間合いを詰める」ことはせず、その場でスキップして次のステップへ。
+	 * false のコンボは、まず移動で間合い・角度を満たしてから発生確率判定を行う。
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Combo")
+	bool bSkipIfConditionUnmet = false;
 };
 
 /**

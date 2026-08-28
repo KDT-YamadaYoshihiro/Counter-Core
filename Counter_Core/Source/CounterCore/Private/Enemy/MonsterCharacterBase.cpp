@@ -11,6 +11,7 @@
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimInstance.h"
 #include "Engine/DamageEvents.h"
+#include "Engine/Engine.h"
 
 AMonsterCharacterBase::AMonsterCharacterBase()
 {
@@ -221,6 +222,14 @@ void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 	case EMonsterState::Hitstun:
 	{
 		HitstunTimer = Combat ? Combat->HitstunDuration : 0.4f;
+		// 中断された攻撃が「やられ連鎖しない」（攻撃5）かどうかを覚えておく。
+		bInterruptedAttackNoChain = false;
+		if (Attack && CurrentComboAttacks.IsValidIndex(ComboIndex - 1))
+		{
+			bool bFound = false;
+			const FMonsterAttackFrameData D = Attack->GetAttackData(CurrentComboAttacks[ComboIndex - 1], bFound);
+			bInterruptedAttackNoChain = bFound && D.bNoHitstunChain;
+		}
 		if (Combat)
 		{
 			Combat->AddStun(Combat->GuardStaggerStunGain);
@@ -245,7 +254,7 @@ void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 		}
 		break;
 	case EMonsterState::Attack:
-		AdvanceCombo();
+		LaunchNextAttackInCombo();
 		break;
 	default:
 		break;
@@ -255,51 +264,140 @@ void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 	OnStateChanged.Broadcast(Old, NewState);
 }
 
-void AMonsterCharacterBase::AdvanceCombo()
+// ---------------------------------------------------------------------------
+// 行動パターン（仕様書 Monster シート「行動パターン」どおり順番に実行）
+// ---------------------------------------------------------------------------
+
+bool AMonsterCharacterBase::EvaluateComboCondition(const FMonsterComboData& C) const
 {
-	if (!Attack)
+	if (!TargetActor)
 	{
-		RequestState(EMonsterState::Idle);
+		return false;
+	}
+	const float DistM = GetDistanceToTargetCm() / 100.f;
+	const float AbsAngle = FMath::Abs(GetSignedAngleToTargetDeg());
+	const bool bDistOk = C.MaxDistanceM <= 0.f || DistM < C.MaxDistanceM;
+	const bool bAngleOk = C.bRequireTargetBehind ? (AbsAngle > 100.f) : (AbsAngle <= C.MaxAngleDeg);
+	return bDistOk && bAngleOk;
+}
+
+bool AMonsterCharacterBase::RollComboProbability(const FMonsterComboData& C) const
+{
+	return FMath::FRandRange(0.f, 100.f) <= C.TriggerChancePercent;
+}
+
+void AMonsterCharacterBase::PrintAI(const FString& Msg, const FColor& Color) const
+{
+	if (!bPrintAIEvents)
+	{
+		return;
+	}
+	UE_LOG(LogTemp, Log, TEXT("[MonsterAI] %s"), *Msg);
+#if !UE_BUILD_SHIPPING
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 3.f, Color, FString::Printf(TEXT("[AI] %s"), *Msg));
+	}
+#endif
+}
+
+void AMonsterCharacterBase::BeginActionStep()
+{
+	bMovingToEngageCombo = false;
+	CurrentComboAttacks.Reset();
+	ComboIndex = 0;
+
+	if (!Attack || ActionLoop.Num() == 0)
+	{
+		EnterState(EMonsterState::Idle);
 		return;
 	}
 
-	// 新規コンボの開始か、進行中コンボの次の一手か。
-	if (CurrentComboAttacks.Num() == 0 || ComboIndex >= CurrentComboAttacks.Num())
+	// 不正エントリや条件スキップで無限ループしないよう、1フレームでの評価数を制限。
+	for (int32 Guard = 0; Guard <= ActionLoop.Num(); ++Guard)
 	{
-		FName ComboId = NAME_None;
-		if (ActionLoop.Num() > 0)
+		CurrentComboId = ActionLoop[ActionLoopIndex % ActionLoop.Num()];
+
+		bool bFound = false;
+		CurrentComboData = Attack->GetComboData(CurrentComboId, bFound);
+		if (!bFound)
 		{
-			ComboId = ActionLoop[ActionLoopIndex % ActionLoop.Num()];
-			++ActionLoopIndex;
-			// 行動ループの条件付き項目（発生確率など）は SelectCombo にも通す。
-			const FName Rolled = Attack->SelectCombo(GetDistanceToTargetCm() / 100.f, GetSignedAngleToTargetDeg());
-			if (Rolled == NAME_None)
+			PrintAI(FString::Printf(TEXT("step %d: %s 未定義 → スキップ"), ActionLoopIndex, *CurrentComboId.ToString()), FColor::Silver);
+			ActionLoopIndex = (ActionLoopIndex + 1) % ActionLoop.Num();
+			continue;
+		}
+
+		if (CurrentComboData.bSkipIfConditionUnmet)
+		{
+			// () 付き: その場で条件判定、未達なら移動せずスキップ。
+			if (EvaluateComboCondition(CurrentComboData) && RollComboProbability(CurrentComboData))
 			{
-				// 条件未達 → この項目はスキップして通常の移動へ。
-				CurrentComboAttacks.Reset();
-				ComboIndex = 0;
-				RequestState(EMonsterState::Run);
+				PrintAI(FString::Printf(TEXT("step %d: (%s) 条件成立 → 発動"), ActionLoopIndex, *CurrentComboId.ToString()), FColor::Cyan);
+				StartCurrentCombo();
 				return;
 			}
-			ComboId = Rolled;
-		}
-		else
-		{
-			ComboId = Attack->SelectCombo(GetDistanceToTargetCm() / 100.f, GetSignedAngleToTargetDeg());
+			PrintAI(FString::Printf(TEXT("step %d: (%s) 条件未達 → スキップ"), ActionLoopIndex, *CurrentComboId.ToString()), FColor::Silver);
+			ActionLoopIndex = (ActionLoopIndex + 1) % ActionLoop.Num();
+			continue;
 		}
 
-		if (ComboId == NAME_None)
-		{
-			CurrentComboAttacks.Reset();
-			ComboIndex = 0;
-			RequestState(EMonsterState::Run);
-			return;
-		}
-
-		CurrentComboAttacks = Attack->GetComboAttacks(ComboId);
-		ComboIndex = 0;
+		// 通常ステップ: 移動で間合い・角度を詰めてから発生確率判定。
+		PrintAI(FString::Printf(TEXT("step %d: %s → 間合いへ移動"), ActionLoopIndex, *CurrentComboId.ToString()), FColor::White);
+		bMovingToEngageCombo = true;
+		EnterState(EMonsterState::Run);
+		return;
 	}
 
+	// 全ステップがスキップ対象だった（通常は起こらない）→ 少し移動して次フレーム再評価。
+	EnterState(EMonsterState::Run);
+}
+
+void AMonsterCharacterBase::AdvanceActionStep()
+{
+	const int32 Prev = ActionLoopIndex;
+	ActionLoopIndex = (ActionLoopIndex + 1) % FMath::Max(1, ActionLoop.Num());
+
+	// ループが一周したら「待機」を挟む。
+	if (ActionLoop.Num() > 0 && ActionLoopIndex == 0 && Prev != 0 && LoopRestTime > 0.f)
+	{
+		LoopRestTimer = LoopRestTime;
+		PrintAI(TEXT("行動ループ一周 → 待機"), FColor::Green);
+		EnterState(EMonsterState::Idle);
+		return;
+	}
+	BeginActionStep();
+}
+
+void AMonsterCharacterBase::StartCurrentCombo()
+{
+	CurrentComboAttacks = CurrentComboData.AttackSequence.Num() > 0
+		? CurrentComboData.AttackSequence
+		: Attack->GetComboAttacks(CurrentComboId);
+	ComboIndex = 0;
+
+	if (CurrentComboAttacks.Num() == 0)
+	{
+		AdvanceActionStep();
+		return;
+	}
+
+	if (State == EMonsterState::Attack)
+	{
+		LaunchNextAttackInCombo();
+	}
+	else
+	{
+		EnterState(EMonsterState::Attack);
+	}
+}
+
+void AMonsterCharacterBase::LaunchNextAttackInCombo()
+{
+	if (!Attack)
+	{
+		AdvanceActionStep();
+		return;
+	}
 	if (CurrentComboAttacks.IsValidIndex(ComboIndex))
 	{
 		Attack->StartAttack(CurrentComboAttacks[ComboIndex]);
@@ -307,7 +405,38 @@ void AMonsterCharacterBase::AdvanceCombo()
 	}
 	else
 	{
-		RequestState(EMonsterState::Idle);
+		// コンボ完了 → 次のステップへ。
+		AdvanceActionStep();
+	}
+}
+
+void AMonsterCharacterBase::ResumeAfterHitstun()
+{
+	HitstunKnockbackDir = FVector::ZeroVector;
+	State = EMonsterState::Idle; // 遷移制限を解除するため一旦クリア
+
+	if (bInterruptedAttackNoChain)
+	{
+		// 攻撃5: やられで次コンボへ連鎖しない。中断した攻撃から続行。
+		PrintAI(TEXT("やられ硬直明け: 攻撃継続（連鎖なし）"), FColor::Yellow);
+		if (CurrentComboAttacks.IsValidIndex(ComboIndex - 1))
+		{
+			--ComboIndex; // 中断された一手をやり直す
+		}
+		if (CurrentComboAttacks.IsValidIndex(ComboIndex))
+		{
+			EnterState(EMonsterState::Attack);
+		}
+		else
+		{
+			AdvanceActionStep();
+		}
+	}
+	else
+	{
+		// 仕様: やられ割り込み → 次の攻撃処理（次のコンボ）へ。
+		PrintAI(TEXT("やられ硬直明け: 次のコンボへ"), FColor::Yellow);
+		AdvanceActionStep();
 	}
 }
 
@@ -317,18 +446,8 @@ void AMonsterCharacterBase::HandleAttackFinished()
 	{
 		return;
 	}
-	// コンボ継続 or 終了。仕様: コンボ内の以降の攻撃は条件無視で続行。
-	if (ComboIndex < CurrentComboAttacks.Num())
-	{
-		Attack->StartAttack(CurrentComboAttacks[ComboIndex]);
-		++ComboIndex;
-	}
-	else
-	{
-		CurrentComboAttacks.Reset();
-		ComboIndex = 0;
-		RequestState(EMonsterState::Run); // 仕様: コンボ後は移動を挟んで次へ
-	}
+	// 仕様: コンボ内の以降の攻撃は条件無視で続行。
+	LaunchNextAttackInCombo();
 }
 
 void AMonsterCharacterBase::HandleCombatStateRequest(EMonsterState Requested)
@@ -458,11 +577,17 @@ void AMonsterCharacterBase::Tick(float Dt)
 	}
 }
 
-void AMonsterCharacterBase::TickIdle(float)
+void AMonsterCharacterBase::TickIdle(float Dt)
 {
+	// ループ一周後の「待機」。
+	if (LoopRestTimer > 0.f)
+	{
+		LoopRestTimer -= Dt;
+		return;
+	}
 	if (TargetActor && GetDistanceToTargetCm() <= DetectionRange)
 	{
-		RequestState(EMonsterState::Run);
+		BeginActionStep();
 	}
 }
 
@@ -470,25 +595,47 @@ void AMonsterCharacterBase::TickRun(float Dt)
 {
 	if (!TargetActor)
 	{
-		RequestState(EMonsterState::Idle);
+		EnterState(EMonsterState::Idle);
 		return;
 	}
 
-	const float Dist = GetDistanceToTargetCm();
-
-	// 向きをターゲットへ。
+	// 向きは常にターゲットへ。
 	const FRotator Look = UKismetMathLibrary::FindLookAtRotation(GetActorLocation(), TargetActor->GetActorLocation());
 	const FRotator Cur = GetActorRotation();
 	SetActorRotation(FRotator(Cur.Pitch, FMath::FInterpTo(Cur.Yaw, Look.Yaw, Dt, 8.f), Cur.Roll));
 
-	if (Dist <= EngageRange)
+	if (bMovingToEngageCombo)
 	{
-		RequestState(EMonsterState::Attack);
+		// 現在ステップのコンボの間合い・角度を満たしたか。
+		if (EvaluateComboCondition(CurrentComboData))
+		{
+			bMovingToEngageCombo = false;
+			if (RollComboProbability(CurrentComboData))
+			{
+				PrintAI(FString::Printf(TEXT("%s: 間合い到達・発生成功 → 発動"), *CurrentComboId.ToString()), FColor::Cyan);
+				StartCurrentCombo();
+			}
+			else
+			{
+				PrintAI(FString::Printf(TEXT("%s: 発生確率 %d%% 失敗 → 次のコンボ"),
+					*CurrentComboId.ToString(), FMath::RoundToInt(CurrentComboData.TriggerChancePercent)), FColor(255, 140, 0));
+				AdvanceActionStep();
+			}
+			return;
+		}
+		AddMovementInput(GetActorForwardVector(), 1.f);
 		return;
 	}
 
-	// 前進（CharacterMovement 前提）。
-	AddMovementInput(GetActorForwardVector(), 1.f);
+	// ステップ未設定で Run にいる（想定外）→ 近づいたら再評価。
+	if (GetDistanceToTargetCm() <= EngageRange)
+	{
+		BeginActionStep();
+	}
+	else
+	{
+		AddMovementInput(GetActorForwardVector(), 1.f);
+	}
 }
 
 void AMonsterCharacterBase::TickAttack(float)
@@ -513,7 +660,6 @@ void AMonsterCharacterBase::TickHitstun(float Dt)
 	HitstunTimer -= Dt;
 	if (HitstunTimer <= 0.f)
 	{
-		HitstunKnockbackDir = FVector::ZeroVector;
-		RequestState(EMonsterState::Attack); // 仕様: 硬直終了 → 次の攻撃処理へ
+		ResumeAfterHitstun(); // 仕様: 硬直終了 → 次の攻撃処理へ（攻撃5は連鎖しない）
 	}
 }
