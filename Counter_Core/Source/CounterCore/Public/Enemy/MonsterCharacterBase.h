@@ -240,6 +240,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Monster|Debug")
 	void DebugPlayerHit();
 
+	/** 頭上の HP バー（BP の WidgetComponent）を BeginPlay で隠す。敵 HP は HUD のボスバーに一本化。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|UI")
+	bool bHideHeadHealthWidget = true;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void OnConstruction(const FTransform& Transform) override;

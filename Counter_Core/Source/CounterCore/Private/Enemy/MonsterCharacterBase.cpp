@@ -8,6 +8,7 @@
 #include "Components/ShapeComponent.h"
 #include "Components/ChildActorComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/WidgetComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
@@ -92,6 +93,24 @@ void AMonsterCharacterBase::BeginPlay()
 	if (Combat)
 	{
 		Combat->OnStateChangeRequested.AddDynamic(this, &AMonsterCharacterBase::HandleCombatStateRequest);
+	}
+
+	// 頭上の HP バー（BP の WidgetComponent「HpGauge」/ UW_HpGaugeOnHead）は不要なので消す。
+	// 敵 HP は HUD の画面上部ボスバーに一本化。
+	if (bHideHeadHealthWidget)
+	{
+		TArray<UWidgetComponent*> Widgets;
+		GetComponents<UWidgetComponent>(Widgets);
+		for (UWidgetComponent* W : Widgets)
+		{
+			if (W)
+			{
+				W->SetHiddenInGame(true);
+				W->SetVisibility(false);
+				W->SetActive(false);
+				W->SetComponentTickEnabled(false);
+			}
+		}
 	}
 	if (Attack)
 	{
