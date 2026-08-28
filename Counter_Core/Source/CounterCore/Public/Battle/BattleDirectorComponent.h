@@ -5,6 +5,7 @@
 #include "BattleDirectorComponent.generated.h"
 
 class UPlayerCombatComponent;
+class UPlayerGuardComponent;
 class UMonsterCombatComponent;
 
 UENUM(BlueprintType)
@@ -78,6 +79,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Battle")
 	float GetElapsedTime() const { return ElapsedTime; }
 
+	/** ガード成功回数（リザルトのスコア判定に使う）。 */
+	UFUNCTION(BlueprintPure, Category = "Battle")
+	int32 GetGuardSuccessCount() const { return GuardSuccessCount; }
+
 	/** 開始演出を明けてバトル開始。 */
 	UFUNCTION(BlueprintCallable, Category = "Battle")
 	void StartBattle();
@@ -98,13 +103,16 @@ private:
 
 	UFUNCTION() void HandlePlayerDied();
 	UFUNCTION() void HandleEnemyDied();
+	UFUNCTION() void HandleGuardSuccess();
 
 	EBattleResult Result = EBattleResult::InProgress;
 	bool bIntroActive = false;
 	float IntroTimer = 0.f;
 	float ElapsedTime = 0.f;
+	int32 GuardSuccessCount = 0;
 
 	UPROPERTY() TObjectPtr<UPlayerCombatComponent> PlayerCombat;
+	UPROPERTY() TObjectPtr<UPlayerGuardComponent> PlayerGuard;
 	UPROPERTY() TObjectPtr<UMonsterCombatComponent> EnemyCombat;
 	UPROPERTY() TObjectPtr<AActor> EnemyActor;
 

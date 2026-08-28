@@ -1,6 +1,9 @@
 #include "Battle/BattleDirectorComponent.h"
+#include "Battle/BattleResultSubsystem.h"
 #include "Player/PlayerCombatComponent.h"
+#include "Player/PlayerGuardComponent.h"
 #include "Enemy/MonsterCombatComponent.h"
+#include "Engine/GameInstance.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -38,11 +41,18 @@ void UBattleDirectorComponent::ResolveRefs()
 		return;
 	}
 
-	if (!PlayerCombat)
+	if (!PlayerCombat || !PlayerGuard)
 	{
 		if (APawn* P = UGameplayStatics::GetPlayerPawn(this, 0))
 		{
-			PlayerCombat = P->FindComponentByClass<UPlayerCombatComponent>();
+			if (!PlayerCombat)
+			{
+				PlayerCombat = P->FindComponentByClass<UPlayerCombatComponent>();
+			}
+			if (!PlayerGuard)
+			{
+				PlayerGuard = P->FindComponentByClass<UPlayerGuardComponent>();
+			}
 		}
 	}
 	if (!EnemyCombat)
@@ -65,6 +75,10 @@ void UBattleDirectorComponent::ResolveRefs()
 	if (EnemyCombat && !EnemyCombat->OnDied.IsAlreadyBound(this, &UBattleDirectorComponent::HandleEnemyDied))
 	{
 		EnemyCombat->OnDied.AddDynamic(this, &UBattleDirectorComponent::HandleEnemyDied);
+	}
+	if (PlayerGuard && !PlayerGuard->OnGuardSuccess.IsAlreadyBound(this, &UBattleDirectorComponent::HandleGuardSuccess))
+	{
+		PlayerGuard->OnGuardSuccess.AddDynamic(this, &UBattleDirectorComponent::HandleGuardSuccess);
 	}
 
 	// 開始演出中は凍結。
@@ -127,6 +141,12 @@ void UBattleDirectorComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 	}
 }
 
+void UBattleDirectorComponent::HandleGuardSuccess()
+{
+	// 仕様書 リザルト: ガード成功回数をスコア判定に使う。
+	++GuardSuccessCount;
+}
+
 void UBattleDirectorComponent::HandlePlayerDied()
 {
 	EndBattle(EBattleResult::PlayerLose);
@@ -180,6 +200,15 @@ void UBattleDirectorComponent::EndBattle(EBattleResult NewResult)
 		NewResult == EBattleResult::PlayerWin ? TEXT("プレイヤー勝利") : TEXT("プレイヤー敗北"));
 
 	OnBattleEnded.Broadcast(Result);
+
+	// 仕様書 リザルト: 勝敗 / タイム / ガード成功回数 / ランクを次シーンへ引き継ぐ。
+	if (UGameInstance* GI = UGameplayStatics::GetGameInstance(this))
+	{
+		if (UBattleResultSubsystem* ResultSys = GI->GetSubsystem<UBattleResultSubsystem>())
+		{
+			ResultSys->SubmitResult(NewResult == EBattleResult::PlayerWin, ElapsedTime, GuardSuccessCount);
+		}
+	}
 
 	// リザルトレベルへ遷移（設定されていれば）。
 	if (World && !ResultLevelName.IsNone())
