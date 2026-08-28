@@ -12,6 +12,7 @@ class UAnimMontage;
 class UPrimitiveComponent;
 class UChildActorComponent;
 class UShapeComponent;
+class UCameraShakeBase;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FMonsterStateChanged, EMonsterState, OldState, EMonsterState, NewState);
 
@@ -93,6 +94,22 @@ public:
 	/** ヒットストップ中の時間スケール（0 に近いほど完全停止）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX", meta = (ClampMin = "0", ClampMax = "1"))
 	float HitStopTimeScale = 0.02f;
+
+	/** 敵の攻撃がプレイヤーに当たったときのカメラシェイク。仕様書 Battle。代用: BP_CameraShake_Hit_Player。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	TSubclassOf<UCameraShakeBase> AttackHitCameraShake;
+
+	/** 敵が被弾・やられたときのカメラシェイク。代用: BP_CameraShake_Hit_Enemy。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	TSubclassOf<UCameraShakeBase> DamagedCameraShake;
+
+	/** カメラシェイクの最大強度になる距離（cm）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX", meta = (ClampMin = "0"))
+	float CameraShakeInnerRadius = 2000.f;
+
+	/** カメラシェイクが届く距離（cm）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX", meta = (ClampMin = "0"))
+	float CameraShakeOuterRadius = 10000.f;
 
 	/** 攻撃判定ボックスの大きさ（武器を使わない場合のフォールバック用）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
@@ -221,6 +238,7 @@ protected:
 	void PrintAI(const FString& Msg, const FColor& Color) const;
 	void PollDebugKeys(); // U / I / O / K / L
 	void EndHitStop();
+	void PlayCameraShake(TSubclassOf<UCameraShakeBase> ShakeClass) const;
 
 	FTimerHandle HitStopTimerHandle;
 

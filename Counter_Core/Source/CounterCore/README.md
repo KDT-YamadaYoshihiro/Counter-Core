@@ -58,11 +58,15 @@
 - `AMonsterCharacterBase::bPrintAIEvents`（既定 true）で「やられ」「スタン」「死亡」も画面/ログに出力。
 - スタン値の蓄積量（プレイヤー攻撃1発ごと）は Player シート管轄。プレイヤー側から `Combat->AddStun(値)` を呼ぶ（弱5/中15/大50）。
 
-### ヒットストップ（仕様書 Battle）
+### ヒットストップ / カメラシェイク（仕様書 Battle）
 
-`bHitStopEnabled`（既定 true）。敵の攻撃がプレイヤーに当たったとき / 敵が被弾・やられたときに、
-`CustomTimeDilation` と `GlobalAnimRateScale` を `HitStopTimeScale`（既定 0.02）に落とし、
-`HitStopDuration`（既定 0.09 秒・実時間）後に戻す。プレイヤーと同期する完全版はプレイヤー側で。
+- **ヒットストップ** `bHitStopEnabled`（既定 true）: 敵の攻撃がプレイヤーに当たった / 敵が被弾・やられた ときに
+  `CustomTimeDilation` と `GlobalAnimRateScale` を `HitStopTimeScale`（既定 0.02）に落とし、
+  `HitStopDuration`（既定 0.09 秒・実時間）後に戻す。
+- **カメラシェイク**: `UGameplayStatics::PlayWorldCameraShake` で `InnerRadius`/`OuterRadius`（2000/10000cm）内のプレイヤーカメラを揺らす。
+  - `AttackHitCameraShake` = `BP_CameraShake_Hit_Player`（敵の攻撃がヒット時）
+  - `DamagedCameraShake` = `BP_CameraShake_Hit_Enemy`（敵が被弾・やられ時）
+- どちらもプレイヤーと厳密に同期する完全版はプレイヤー側で。
 
 ### デバッグキー（`bEnableDebugKeys`、既定 true）
 

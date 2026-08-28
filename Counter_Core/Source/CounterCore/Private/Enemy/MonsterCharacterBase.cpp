@@ -12,6 +12,7 @@
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
 #include "TimerManager.h"
+#include "Camera/CameraShakeBase.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimInstance.h"
 #include "Engine/DamageEvents.h"
@@ -268,7 +269,8 @@ void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 		{
 			HitstunKnockbackDir = (GetActorLocation() - TargetActor->GetActorLocation()).GetSafeNormal2D();
 		}
-		ApplyHitStop(); // 仕様書 Battle: ガード成功時のヒットストップ
+		ApplyHitStop();                          // 仕様書 Battle: ガード成功時のヒットストップ
+		PlayCameraShake(DamagedCameraShake);     // 仕様書 Battle: カメラシェイク
 		PrintAI(TEXT("やられ（ガード成功）"), FColor::Orange);
 		break;
 	}
@@ -560,7 +562,8 @@ void AMonsterCharacterBase::OnHitboxOverlap(UPrimitiveComponent* /*OverlappedCom
 	{
 		UGameplayStatics::ApplyDamage(OtherActor, static_cast<float>(Power), GetController(), this,
 			UDamageType::StaticClass());
-		ApplyHitStop(); // 仕様書 Battle: 攻撃ヒット時のヒットストップ
+		ApplyHitStop();                              // 仕様書 Battle: 攻撃ヒット時のヒットストップ
+		PlayCameraShake(AttackHitCameraShake);       // 仕様書 Battle: 攻撃ヒット時のカメラシェイク
 	}
 }
 
@@ -587,6 +590,17 @@ void AMonsterCharacterBase::EndHitStop()
 	{
 		M->GlobalAnimRateScale = 1.f;
 	}
+}
+
+void AMonsterCharacterBase::PlayCameraShake(TSubclassOf<UCameraShakeBase> ShakeClass) const
+{
+	if (!ShakeClass)
+	{
+		return;
+	}
+	// 仕様書 Battle「カメラシェイク」: 攻撃ヒット時 / 被弾時に微小振動。
+	UGameplayStatics::PlayWorldCameraShake(GetWorld(), ShakeClass, GetActorLocation(),
+		CameraShakeInnerRadius, CameraShakeOuterRadius);
 }
 
 void AMonsterCharacterBase::DealDamageToTarget(int32 AttackPower)
@@ -635,7 +649,8 @@ float AMonsterCharacterBase::TakeDamage(float DamageAmount, const FDamageEvent& 
 	{
 		// bGuardedByPlayer = false（ガード判定はプレイヤー側が別途 HandleIncomingHit(true) を呼ぶ想定）。
 		Combat->HandleIncomingHit(FMath::RoundToInt(DamageAmount), false);
-		ApplyHitStop(); // 仕様書 Battle: 被弾時のヒットストップ
+		ApplyHitStop();                          // 仕様書 Battle: 被弾時のヒットストップ
+		PlayCameraShake(DamagedCameraShake);     // 仕様書 Battle: 被弾時のカメラシェイク
 	}
 	return Actual;
 }
