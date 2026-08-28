@@ -1,6 +1,8 @@
 #include "Enemy/MonsterCharacterBase.h"
 #include "Enemy/MonsterCombatComponent.h"
 #include "Enemy/MonsterAttackComponent.h"
+#include "Player/PlayerCombatComponent.h"
+#include "Player/PlayerGuardComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/ShapeComponent.h"
@@ -273,6 +275,18 @@ void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 	{
 		LoopRestTimer = FMath::Max(LoopRestTimer, Combat ? Combat->GetUpTime : 1.0f);
 		PrintAI(TEXT("スタン解除 → 起き上がり"), FColor::Green);
+	}
+
+	// 仕様書 Battle「ラッシュ」: 敵スタン中はプレイヤーをラッシュ状態にする（ゲージ MAX + 与ダメ 1.2倍）。
+	if (NewState == EMonsterState::Stun || Old == EMonsterState::Stun)
+	{
+		if (TargetActor)
+		{
+			if (UPlayerCombatComponent* PlayerCombat = TargetActor->FindComponentByClass<UPlayerCombatComponent>())
+			{
+				PlayerCombat->SetRushActive(NewState == EMonsterState::Stun);
+			}
+		}
 	}
 
 	switch (NewState)
@@ -585,13 +599,38 @@ void AMonsterCharacterBase::OnHitboxOverlap(UPrimitiveComponent* /*OverlappedCom
 	HitActorsThisSwing.Add(OtherActor);
 
 	const int32 Power = CurrentAttackPower();
-	if (Power > 0)
+	if (Power <= 0)
+	{
+		return;
+	}
+
+	// プレイヤーのガード / コンバットコンポーネントがあれば直接そちらへ
+	// （盾耐久・ゲージ変換・被弾処理は C++ コンポーネントが持つ）。
+	bool bRouted = false;
+	if (UPlayerGuardComponent* PlayerGuard = OtherActor->FindComponentByClass<UPlayerGuardComponent>())
+	{
+		if (PlayerGuard->IsGuarding())
+		{
+			PlayerGuard->HandleGuardedHit(Power, Power, /*bJustGuard*/ false);
+			bRouted = true;
+		}
+	}
+	if (!bRouted)
+	{
+		if (UPlayerCombatComponent* PlayerCombat = OtherActor->FindComponentByClass<UPlayerCombatComponent>())
+		{
+			PlayerCombat->TakeIncomingHit(Power, /*bGuarded*/ false);
+			bRouted = true;
+		}
+	}
+	if (!bRouted)
 	{
 		UGameplayStatics::ApplyDamage(OtherActor, static_cast<float>(Power), GetController(), this,
 			UDamageType::StaticClass());
-		ApplyHitStop();                              // 仕様書 Battle: 攻撃ヒット時のヒットストップ
-		PlayCameraShake(AttackHitCameraShake);       // 仕様書 Battle: 攻撃ヒット時のカメラシェイク
 	}
+
+	ApplyHitStop();                              // 仕様書 Battle: 攻撃ヒット時のヒットストップ
+	PlayCameraShake(AttackHitCameraShake);       // 仕様書 Battle: 攻撃ヒット時のカメラシェイク
 }
 
 void AMonsterCharacterBase::ApplyHitStop()
