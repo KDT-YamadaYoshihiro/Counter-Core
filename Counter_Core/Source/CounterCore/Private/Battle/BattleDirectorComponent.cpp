@@ -2,6 +2,7 @@
 #include "Battle/BattleResultSubsystem.h"
 #include "Player/PlayerCombatComponent.h"
 #include "Player/PlayerGuardComponent.h"
+#include "Player/PlayerActionComponent.h"
 #include "Enemy/MonsterCombatComponent.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/HUD.h"
@@ -193,6 +194,19 @@ void UBattleDirectorComponent::EndBattle(EBattleResult NewResult)
 			if (APawn* Pawn = PC->GetPawn())
 			{
 				Pawn->DisableInput(PC);
+
+				// C++ の攻撃/ガードは PollFallbackInput で生キーを直接見ているため
+				// DisableInput では止まらない。コンポーネントの Tick を止めて確実に固める。
+				if (UPlayerActionComponent* Action = Pawn->FindComponentByClass<UPlayerActionComponent>())
+				{
+					Action->CancelAttack();
+					Action->SetComponentTickEnabled(false);
+				}
+				if (UPlayerGuardComponent* Guard = Pawn->FindComponentByClass<UPlayerGuardComponent>())
+				{
+					Guard->StopGuard();
+					Guard->SetComponentTickEnabled(false);
+				}
 			}
 		}
 	}
