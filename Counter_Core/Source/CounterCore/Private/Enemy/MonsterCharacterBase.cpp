@@ -2,6 +2,8 @@
 #include "Enemy/MonsterCombatComponent.h"
 #include "Enemy/MonsterAttackComponent.h"
 #include "Components/BoxComponent.h"
+#include "Components/ShapeComponent.h"
+#include "Components/ChildActorComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -24,6 +26,40 @@ AMonsterCharacterBase::AMonsterCharacterBase()
 	Hitbox->SetCollisionResponseToAllChannels(ECR_Ignore);
 	Hitbox->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 	Hitbox->SetGenerateOverlapEvents(true);
+
+	WeaponActor = CreateDefaultSubobject<UChildActorComponent>(TEXT("WeaponActor"));
+	WeaponActor->SetupAttachment(GetMesh(), FName("hand_r"));
+}
+
+void AMonsterCharacterBase::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+
+	// エディタ上でも武器を表示するため、生成クラスとアタッチ先をここで確定させる。
+	if (WeaponActor)
+	{
+		if (WeaponActor->GetChildActorClass() != WeaponClass)
+		{
+			WeaponActor->SetChildActorClass(WeaponClass);
+		}
+		if (GetMesh())
+		{
+			WeaponActor->AttachToComponent(GetMesh(),
+				FAttachmentTransformRules::SnapToTargetNotIncludingScale, WeaponSocket);
+		}
+	}
+}
+
+UPrimitiveComponent* AMonsterCharacterBase::ResolveAttackHitbox() const
+{
+	if (WeaponActor && WeaponActor->GetChildActor())
+	{
+		if (UShapeComponent* Shape = WeaponActor->GetChildActor()->FindComponentByClass<UShapeComponent>())
+		{
+			return Shape;
+		}
+	}
+	return Hitbox;
 }
 
 int32 AMonsterCharacterBase::CurrentAttackPower() const
@@ -53,7 +89,21 @@ void AMonsterCharacterBase::BeginPlay()
 		Attack->OnPlayAttackAnim.AddDynamic(this, &AMonsterCharacterBase::HandlePlayAttackAnim);
 	}
 
-	// 攻撃判定ボックスをセットアップ（ソケット指定があれば付け替え）。
+	// 武器を生成して手にアタッチ。
+	if (WeaponActor)
+	{
+		if (WeaponClass && WeaponActor->GetChildActorClass() != WeaponClass)
+		{
+			WeaponActor->SetChildActorClass(WeaponClass);
+		}
+		if (GetMesh())
+		{
+			WeaponActor->AttachToComponent(GetMesh(),
+				FAttachmentTransformRules::SnapToTargetNotIncludingScale, WeaponSocket);
+		}
+	}
+
+	// 内蔵フォールバック判定のセットアップ。
 	if (Hitbox)
 	{
 		Hitbox->SetBoxExtent(HitboxExtent);
@@ -61,8 +111,16 @@ void AMonsterCharacterBase::BeginPlay()
 		{
 			Hitbox->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetIncludingScale, HitboxSocket);
 		}
-		Hitbox->OnComponentBeginOverlap.AddDynamic(this, &AMonsterCharacterBase::OnHitboxOverlap);
-		Hitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+
+	// 攻撃判定の実体を解決（武器内シェイプ優先）。HitActive 中だけ Overlap を有効にする。
+	ActiveHitbox = ResolveAttackHitbox();
+	if (ActiveHitbox)
+	{
+		ActiveHitbox->OnComponentBeginOverlap.AddDynamic(this, &AMonsterCharacterBase::OnHitboxOverlap);
+		ActiveHitbox->SetGenerateOverlapEvents(true);
+		ActiveHitbox->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+		ActiveHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	}
 
 	if (UCharacterMovementComponent* Move = GetCharacterMovement())
@@ -280,25 +338,27 @@ void AMonsterCharacterBase::HandleCombatStateRequest(EMonsterState Requested)
 
 void AMonsterCharacterBase::HandleToggleHitbox(bool bEnable)
 {
-	if (!Hitbox)
+	if (!ActiveHitbox)
 	{
 		return;
 	}
 	if (bEnable)
 	{
 		HitActorsThisSwing.Reset();
-		Hitbox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		ActiveHitbox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		ActiveHitbox->SetHiddenInGame(false); // 判定中はワイヤーフレーム表示
 		// 判定ONの瞬間に既に重なっている相手も拾う。
 		TArray<AActor*> Overlapping;
-		Hitbox->GetOverlappingActors(Overlapping, APawn::StaticClass());
+		ActiveHitbox->GetOverlappingActors(Overlapping, APawn::StaticClass());
 		for (AActor* Other : Overlapping)
 		{
-			OnHitboxOverlap(Hitbox, Other, nullptr, 0, false, FHitResult());
+			OnHitboxOverlap(ActiveHitbox, Other, nullptr, 0, false, FHitResult());
 		}
 	}
 	else
 	{
-		Hitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		ActiveHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		ActiveHitbox->SetHiddenInGame(true);
 		HitActorsThisSwing.Reset();
 	}
 }

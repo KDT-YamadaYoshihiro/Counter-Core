@@ -10,6 +10,8 @@ class UMonsterAttackComponent;
 class UBoxComponent;
 class UAnimMontage;
 class UPrimitiveComponent;
+class UChildActorComponent;
+class UShapeComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FMonsterStateChanged, EMonsterState, OldState, EMonsterState, NewState);
 
@@ -59,13 +61,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
 	TMap<EMonsterState, TObjectPtr<UAnimMontage>> ReactionMontages;
 
-	/** 攻撃判定ボックスの大きさ（未設定の既定）。 */
+	/** 攻撃判定ボックスの大きさ（武器を使わない場合のフォールバック用）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
 	FVector HitboxExtent = FVector(60.f, 60.f, 60.f);
 
-	/** 攻撃判定ボックスをアタッチするソケット（空ならメッシュ原点）。 */
+	/** 内蔵フォールバック攻撃判定をアタッチするソケット（空ならメッシュ原点）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
 	FName HitboxSocket = NAME_None;
+
+	/** 手に持たせる武器アクター（例: BP_Weapon）。設定すると武器内の判定ボックスを攻撃判定として使う。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	TSubclassOf<AActor> WeaponClass;
+
+	/** 武器をアタッチするメッシュのソケット / ボーン名。UE5 マネキンなら "hand_r"。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	FName WeaponSocket = FName("hand_r");
 
 	// --- コンポーネント ---
 
@@ -75,9 +85,13 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Monster")
 	TObjectPtr<UMonsterAttackComponent> Attack;
 
-	/** 攻撃判定ボックス。HitActive 中だけ Overlap 有効。 */
+	/** 内蔵フォールバック攻撃判定ボックス。武器未設定時のみ使用。HitActive 中だけ Overlap 有効。 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Monster")
 	TObjectPtr<UBoxComponent> Hitbox;
+
+	/** 手に持たせた武器（WeaponClass から生成）。 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Monster")
+	TObjectPtr<UChildActorComponent> WeaponActor;
 
 	// --- ステート ---
 
@@ -128,6 +142,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator,
 		AActor* DamageCauser) override;
@@ -157,6 +172,13 @@ private:
 	static int32 StatePriority(EMonsterState S);
 	void AdvanceCombo();
 	int32 CurrentAttackPower() const;
+
+	/** 攻撃判定に使う実体を返す（武器内のシェイプ優先、無ければ内蔵 Hitbox）。 */
+	UPrimitiveComponent* ResolveAttackHitbox() const;
+
+	/** BeginPlay で解決した攻撃判定コンポーネント。 */
+	UPROPERTY()
+	TObjectPtr<UPrimitiveComponent> ActiveHitbox;
 
 	UPROPERTY()
 	TObjectPtr<AActor> TargetActor;

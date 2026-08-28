@@ -52,6 +52,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Attack")
 	TObjectPtr<AActor> RotationActor;
 
+	/** true でコンボ発動条件（距離リング・角度ウェッジ）と攻撃フェーズをその場に可視化する。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Debug")
+	bool bDrawDebug = true;
+
 	// --- クエリ ---
 
 	/**
@@ -117,6 +121,7 @@ protected:
 private:
 	void SetPhase(EMonsterAttackPhase NewPhase);
 	void RotateTowardTarget(float DeltaTime, float RateDegPerSec);
+	void DrawDebugVisualization() const;
 
 	UPROPERTY()
 	TObjectPtr<AActor> TargetActor;

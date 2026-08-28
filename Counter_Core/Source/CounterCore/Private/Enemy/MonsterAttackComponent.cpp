@@ -1,11 +1,14 @@
 #include "Enemy/MonsterAttackComponent.h"
 #include "GameFramework/Actor.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "DrawDebugHelpers.h"
+#include "Engine/World.h"
 
 UMonsterAttackComponent::UMonsterAttackComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
-	PrimaryComponentTick.bStartWithTickEnabled = false;
+	// 条件可視化のため常時 Tick。攻撃タイムラインは CurrentPhase で判定する。
+	PrimaryComponentTick.bStartWithTickEnabled = true;
 }
 
 FMonsterAttackFrameData UMonsterAttackComponent::GetAttackData(FName AttackId, bool& bFound) const
@@ -111,7 +114,6 @@ void UMonsterAttackComponent::CancelAttack()
 		bHitboxOn = false;
 		OnToggleHitbox.Broadcast(false);
 	}
-	SetComponentTickEnabled(false);
 	SetPhase(EMonsterAttackPhase::Finished);
 	CurrentPhase = EMonsterAttackPhase::None;
 }
@@ -152,9 +154,13 @@ void UMonsterAttackComponent::TickComponent(float DeltaTime, ELevelTick TickType
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	if (bDrawDebug)
+	{
+		DrawDebugVisualization();
+	}
+
 	if (CurrentPhase == EMonsterAttackPhase::None || CurrentPhase == EMonsterAttackPhase::Finished)
 	{
-		SetComponentTickEnabled(false);
 		return;
 	}
 
@@ -185,7 +191,6 @@ void UMonsterAttackComponent::TickComponent(float DeltaTime, ELevelTick TickType
 	}
 	else
 	{
-		SetComponentTickEnabled(false);
 		SetPhase(EMonsterAttackPhase::Finished);
 		CurrentPhase = EMonsterAttackPhase::None;
 		OnAttackFinished.Broadcast();
@@ -200,4 +205,99 @@ void UMonsterAttackComponent::TickComponent(float DeltaTime, ELevelTick TickType
 		bHitboxOn = bShouldHit;
 		OnToggleHitbox.Broadcast(bHitboxOn);
 	}
+}
+
+void UMonsterAttackComponent::DrawDebugVisualization() const
+{
+#if ENABLE_DRAW_DEBUG
+	const AActor* Owner = GetOwner();
+	UWorld* World = GetWorld();
+	if (!Owner || !World || World->IsNetMode(NM_DedicatedServer))
+	{
+		return;
+	}
+
+	const FVector Base = Owner->GetActorLocation();
+	const FVector Fwd = Owner->GetActorForwardVector().GetSafeNormal2D();
+	const FVector Up = FVector::UpVector;
+	const FVector AxisX(1.f, 0.f, 0.f);
+	const FVector AxisY(0.f, 1.f, 0.f);
+
+	// ターゲットまでの距離(m)・符号付き角度(deg)
+	float DistM = -1.f;
+	float AngleDeg = 0.f;
+	if (TargetActor)
+	{
+		const FVector To = TargetActor->GetActorLocation() - Base;
+		DistM = To.Size2D() / 100.f;
+		const FVector To2D = To.GetSafeNormal2D();
+		AngleDeg = FMath::RadiansToDegrees(
+			FMath::Atan2(FVector::CrossProduct(Fwd, To2D).Z, FVector::DotProduct(Fwd, To2D)));
+		DrawDebugLine(World, Base, TargetActor->GetActorLocation(), FColor::White, false, -1.f, 0, 1.5f);
+		DrawDebugString(World, Base + FVector(0, 0, 140.f),
+			FString::Printf(TEXT("dist %.2fm  ang %.0f"), DistM, AngleDeg), nullptr, FColor::White, 0.f);
+	}
+
+	// 各コンボの発動条件: 最大距離リング + 角度ウェッジ（条件成立=緑 / 不成立=灰）
+	if (ComboDataTable)
+	{
+		TArray<FMonsterComboData*> Rows;
+		ComboDataTable->GetAllRows<FMonsterComboData>(TEXT("DebugViz"), Rows);
+		int32 i = 0;
+		for (const FMonsterComboData* Row : Rows)
+		{
+			if (!Row)
+			{
+				continue;
+			}
+			const float Radius = (Row->MaxDistanceM > 0.f ? Row->MaxDistanceM : 8.f) * 100.f;
+			const bool bDistOk = Row->MaxDistanceM <= 0.f || (DistM >= 0.f && DistM < Row->MaxDistanceM);
+			const bool bBehind = FMath::Abs(AngleDeg) > 100.f;
+			const bool bAngleOk = Row->bRequireTargetBehind ? bBehind : (FMath::Abs(AngleDeg) <= Row->MaxAngleDeg);
+			const bool bMet = TargetActor && bDistOk && bAngleOk;
+			const FColor Col = bMet ? FColor::Green : FColor(110, 110, 110);
+			const FVector RingCenter = Base + FVector(0, 0, 4.f + i * 1.5f);
+
+			DrawDebugCircle(World, RingCenter, Radius, 48, Col, false, -1.f, 0, 1.5f, AxisX, AxisY, false);
+
+			const float Half = FMath::Clamp(Row->MaxAngleDeg, 0.f, 180.f);
+			const FVector WedgeCenter = Row->bRequireTargetBehind ? -Fwd : Fwd;
+			const FVector L = WedgeCenter.RotateAngleAxis(-Half, Up);
+			const FVector R = WedgeCenter.RotateAngleAxis(Half, Up);
+			DrawDebugLine(World, Base, Base + L * Radius, Col, false, -1.f, 0, 1.f);
+			DrawDebugLine(World, Base, Base + R * Radius, Col, false, -1.f, 0, 1.f);
+			DrawDebugString(World, RingCenter + WedgeCenter * Radius,
+				Row->ComboId.ToString(), nullptr, Col, 0.f);
+			++i;
+		}
+	}
+
+	// 進行中の攻撃: 接触距離リング + 接触角度ウェッジ + フェーズ表示（黄 / 判定中は赤）
+	if (CurrentPhase != EMonsterAttackPhase::None && CurrentPhase != EMonsterAttackPhase::Finished)
+	{
+		const FColor Col = bHitboxOn ? FColor::Red : FColor::Yellow;
+		const float Radius = FMath::Max(ActiveData.ContactDistanceM, 0.1f) * 100.f;
+		DrawDebugCircle(World, Base + FVector(0, 0, 2.f), Radius, 48, Col, false, -1.f, 0, 3.f, AxisX, AxisY, false);
+
+		const float Half = FMath::Clamp(ActiveData.ContactAngleDeg, 0.f, 180.f);
+		const FVector L = Fwd.RotateAngleAxis(-Half, Up);
+		const FVector R = Fwd.RotateAngleAxis(Half, Up);
+		DrawDebugLine(World, Base, Base + L * Radius, Col, false, -1.f, 0, 2.5f);
+		DrawDebugLine(World, Base, Base + R * Radius, Col, false, -1.f, 0, 2.5f);
+
+		const TCHAR* PhaseStr = TEXT("");
+		switch (CurrentPhase)
+		{
+		case EMonsterAttackPhase::Anticipation: PhaseStr = TEXT("予兆"); break;
+		case EMonsterAttackPhase::Committed:    PhaseStr = TEXT("発生前"); break;
+		case EMonsterAttackPhase::HitActive:    PhaseStr = TEXT("判定"); break;
+		case EMonsterAttackPhase::Recovery:     PhaseStr = TEXT("硬直"); break;
+		default: break;
+		}
+		DrawDebugString(World, Base + FVector(0, 0, 165.f),
+			FString::Printf(TEXT("%s  %s  t=%.2f  dmg=%d"),
+				*ActiveData.AttackId.ToString(), PhaseStr, ElapsedTime, ActiveData.Damage),
+			nullptr, Col, 0.f);
+	}
+#endif
 }
