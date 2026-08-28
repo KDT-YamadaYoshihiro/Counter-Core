@@ -82,6 +82,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
 	bool bRagdollOnDeath = true;
 
+	/** 攻撃ヒット / 被弾 / やられ 時にヒットストップ（自分の時間を数フレーム止める）。仕様書 Battle。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	bool bHitStopEnabled = true;
+
+	/** ヒットストップの実時間（秒）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX", meta = (ClampMin = "0"))
+	float HitStopDuration = 0.09f;
+
+	/** ヒットストップ中の時間スケール（0 に近いほど完全停止）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX", meta = (ClampMin = "0", ClampMax = "1"))
+	float HitStopTimeScale = 0.02f;
+
 	/** 攻撃判定ボックスの大きさ（武器を使わない場合のフォールバック用）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
 	FVector HitboxExtent = FVector(60.f, 60.f, 60.f);
@@ -161,6 +173,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Monster|Combat")
 	void DealDamageToTarget(int32 AttackPower);
 
+	/** ヒットストップを発火（自分の CustomTimeDilation とアニメ速度を一時的に落とす）。 */
+	UFUNCTION(BlueprintCallable, Category = "Monster|FX")
+	void ApplyHitStop();
+
 	// --- デバッグ発火（キー U / I / O、または BP から直接）---
 
 	UFUNCTION(BlueprintCallable, Category = "Monster|Debug")
@@ -171,6 +187,14 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Monster|Debug")
 	void DebugTriggerDead();
+
+	/** K 相当: ガード成功の被弾をシミュレート。 */
+	UFUNCTION(BlueprintCallable, Category = "Monster|Debug")
+	void DebugGuardedHit();
+
+	/** L 相当: プレイヤーの通常攻撃ヒット（HP ダメージ + スタン蓄積）をシミュレート。 */
+	UFUNCTION(BlueprintCallable, Category = "Monster|Debug")
+	void DebugPlayerHit();
 
 protected:
 	virtual void BeginPlay() override;
@@ -195,7 +219,10 @@ protected:
 	bool EvaluateComboCondition(const FMonsterComboData& C) const; // 距離・角度・背後
 	bool RollComboProbability(const FMonsterComboData& C) const;
 	void PrintAI(const FString& Msg, const FColor& Color) const;
-	void PollDebugKeys(); // U / I / O
+	void PollDebugKeys(); // U / I / O / K / L
+	void EndHitStop();
+
+	FTimerHandle HitStopTimerHandle;
 
 	// 攻撃コンポーネントのイベント
 	UFUNCTION()

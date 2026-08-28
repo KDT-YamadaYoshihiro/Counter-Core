@@ -26,6 +26,11 @@ float UMonsterCombatComponent::GetStunNormalized() const
 	return Status.MaxStun > 0 ? FMath::Clamp(static_cast<float>(Status.Stun) / Status.MaxStun, 0.f, 1.f) : 0.f;
 }
 
+float UMonsterCombatComponent::GetHpNormalized() const
+{
+	return Status.MaxHp > 0 ? FMath::Clamp(static_cast<float>(Status.Hp) / Status.MaxHp, 0.f, 1.f) : 0.f;
+}
+
 FMonsterDamageResult UMonsterCombatComponent::HandleIncomingHit(int32 AttackPower, bool bGuardedByPlayer)
 {
 	FMonsterDamageResult Result;

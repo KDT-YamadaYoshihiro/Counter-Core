@@ -69,6 +69,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Hitstun", meta = (ClampMin = "0"))
 	float HitstunDuration = 0.4f;
 
+	/** やられ開始からノックバックが始まるまでの遅延（秒）。仕様: [0.1s] ノックバック。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Hitstun", meta = (ClampMin = "0"))
+	float HitstunKnockbackStart = 0.1f;
+
+	/** スタン解除後、AI 再開までの起き上がり時間（秒）。仕様 Battle: 起き上がりモーションとともに復帰。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Stun", meta = (ClampMin = "0"))
+	float GetUpTime = 1.0f;
+
 	/** プレイヤーの通常被弾でスタン値に加算する量（デザイン調整用）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Stun", meta = (ClampMin = "0"))
 	int32 HitStunGain = 0;
@@ -100,6 +108,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Monster|Stun")
 	float GetStunNormalized() const;
+
+	/** HP 0-1（Widget バインド用）。 */
+	UFUNCTION(BlueprintPure, Category = "Monster|Status")
+	float GetHpNormalized() const;
 
 	// --- 実行 ---
 

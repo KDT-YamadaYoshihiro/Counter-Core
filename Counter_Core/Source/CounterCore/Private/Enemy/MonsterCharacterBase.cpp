@@ -11,6 +11,7 @@
 #include "Kismet/KismetMathLibrary.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
+#include "TimerManager.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimInstance.h"
 #include "Engine/DamageEvents.h"
@@ -240,6 +241,13 @@ void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 		}
 	}
 
+	// スタン解除で待機へ戻るときは「起き上がり」時間を挟んでから AI 再開。
+	if (NewState == EMonsterState::Idle && Old == EMonsterState::Stun)
+	{
+		LoopRestTimer = FMath::Max(LoopRestTimer, Combat ? Combat->GetUpTime : 1.0f);
+		PrintAI(TEXT("スタン解除 → 起き上がり"), FColor::Green);
+	}
+
 	switch (NewState)
 	{
 	case EMonsterState::Hitstun:
@@ -260,6 +268,7 @@ void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 		{
 			HitstunKnockbackDir = (GetActorLocation() - TargetActor->GetActorLocation()).GetSafeNormal2D();
 		}
+		ApplyHitStop(); // 仕様書 Battle: ガード成功時のヒットストップ
 		PrintAI(TEXT("やられ（ガード成功）"), FColor::Orange);
 		break;
 	}
@@ -551,6 +560,32 @@ void AMonsterCharacterBase::OnHitboxOverlap(UPrimitiveComponent* /*OverlappedCom
 	{
 		UGameplayStatics::ApplyDamage(OtherActor, static_cast<float>(Power), GetController(), this,
 			UDamageType::StaticClass());
+		ApplyHitStop(); // 仕様書 Battle: 攻撃ヒット時のヒットストップ
+	}
+}
+
+void AMonsterCharacterBase::ApplyHitStop()
+{
+	if (!bHitStopEnabled || HitStopDuration <= 0.f || State == EMonsterState::Dead)
+	{
+		return;
+	}
+	CustomTimeDilation = HitStopTimeScale;
+	if (USkeletalMeshComponent* M = GetMesh())
+	{
+		M->GlobalAnimRateScale = HitStopTimeScale;
+	}
+	// ワールドタイマーは Actor の CustomTimeDilation の影響を受けないので実時間で復帰する。
+	GetWorldTimerManager().SetTimer(HitStopTimerHandle, this, &AMonsterCharacterBase::EndHitStop,
+		HitStopDuration, false);
+}
+
+void AMonsterCharacterBase::EndHitStop()
+{
+	CustomTimeDilation = 1.f;
+	if (USkeletalMeshComponent* M = GetMesh())
+	{
+		M->GlobalAnimRateScale = 1.f;
 	}
 }
 
@@ -600,6 +635,7 @@ float AMonsterCharacterBase::TakeDamage(float DamageAmount, const FDamageEvent& 
 	{
 		// bGuardedByPlayer = false（ガード判定はプレイヤー側が別途 HandleIncomingHit(true) を呼ぶ想定）。
 		Combat->HandleIncomingHit(FMath::RoundToInt(DamageAmount), false);
+		ApplyHitStop(); // 仕様書 Battle: 被弾時のヒットストップ
 	}
 	return Actual;
 }
@@ -635,7 +671,7 @@ void AMonsterCharacterBase::PollDebugKeys()
 	if (GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(static_cast<uint64>(GetUniqueID()) + 900000, 0.2f, FColor::White,
-			TEXT("[敵デバッグ] U=スタン  I=やられ  O=死亡"));
+			TEXT("[敵デバッグ] U=スタン  I=やられ  O=死亡  K=ガード被弾  L=通常被弾"));
 	}
 #endif
 
@@ -650,6 +686,14 @@ void AMonsterCharacterBase::PollDebugKeys()
 	if (PC->WasInputKeyJustPressed(EKeys::O))
 	{
 		DebugTriggerDead();
+	}
+	if (PC->WasInputKeyJustPressed(EKeys::K))
+	{
+		DebugGuardedHit();
+	}
+	if (PC->WasInputKeyJustPressed(EKeys::L))
+	{
+		DebugPlayerHit();
 	}
 }
 
@@ -690,6 +734,27 @@ void AMonsterCharacterBase::DebugTriggerDead()
 	}
 	PrintAI(TEXT("[DEBUG] 死亡発火 (O)"), FColor::Red);
 	ForceState(EMonsterState::Dead);
+}
+
+void AMonsterCharacterBase::DebugGuardedHit()
+{
+	if (State == EMonsterState::Dead || !Combat)
+	{
+		return;
+	}
+	PrintAI(TEXT("[DEBUG] ガード被弾 (K)"), FColor::Orange);
+	Combat->HandleIncomingHit(50, /*bGuardedByPlayer*/ true);
+}
+
+void AMonsterCharacterBase::DebugPlayerHit()
+{
+	if (State == EMonsterState::Dead || !Combat)
+	{
+		return;
+	}
+	PrintAI(TEXT("[DEBUG] 通常被弾 +スタン15 (L)"), FColor::Yellow);
+	Combat->HandleIncomingHit(60, /*bGuardedByPlayer*/ false);
+	Combat->AddStun(15); // プレイヤー中攻撃相当のスタン蓄積（Player シート）
 }
 
 void AMonsterCharacterBase::TickIdle(float Dt)
@@ -764,11 +829,15 @@ void AMonsterCharacterBase::TickAttack(float)
 
 void AMonsterCharacterBase::TickHitstun(float Dt)
 {
-	// 仕様: 後方 0.2M ノックバック → [0.4s] 硬直終了 → 次の攻撃処理へ。
-	if (!HitstunKnockbackDir.IsNearlyZero())
+	const float Duration = Combat ? Combat->HitstunDuration : 0.4f;
+	const float KnockStart = Combat ? Combat->HitstunKnockbackStart : 0.1f;
+	const float Elapsed = Duration - HitstunTimer;
+
+	// 仕様: [0.1s] からノックバック開始 → [0.4s] 硬直終了。総移動量は 0.2M。
+	if (!HitstunKnockbackDir.IsNearlyZero() && Elapsed >= KnockStart)
 	{
-		const float SpeedCmPerSec = (Combat ? Combat->HitstunKnockbackM : 0.2f) * 100.f /
-			FMath::Max(0.01f, (Combat ? Combat->HitstunDuration : 0.4f));
+		const float KnockWindow = FMath::Max(0.01f, Duration - KnockStart);
+		const float SpeedCmPerSec = (Combat ? Combat->HitstunKnockbackM : 0.2f) * 100.f / KnockWindow;
 		AddActorWorldOffset(HitstunKnockbackDir * SpeedCmPerSec * Dt, true);
 	}
 
