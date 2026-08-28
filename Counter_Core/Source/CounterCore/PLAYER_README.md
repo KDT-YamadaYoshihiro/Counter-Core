@@ -33,9 +33,22 @@
   （ガード中なら `HandleGuardedHit`、通常は `TakeIncomingHit`）。無ければ従来の `ApplyDamage`。
 - 敵スタン中 → プレイヤーを `SetRushActive(true)`（ゲージ MAX + 与ダメ 1.2倍）、解除で false。
 
+## HUD（`ACounterCoreHUD`、UMG なしのキャンバス描画）
+
+`BP_MyGameMode` と `GM_Battle` の `HUDClass` に設定済み。仕様書 UI シート準拠の簡易版:
+
+- **敵（ボス）HP**: 画面上部中央、緑バー + **遅延ダメージの赤バー**（`DelayBarCatchupPerSec`）+ 数値 + スタンゲージ細バー
+- **プレイヤー攻撃ゲージ**: 画面下中央、10 枠のセグメント（ラッシュ中はオレンジ）+ 数値
+- **ガード**: 画面左中央、`>>> ガード中 <<<` の文字 + 盾ゲージ + ガード可能時間バー（＝サークルの代用）、クールタイム表示
+- 気絶中は中央に「気絶！」
+
+さらに `UPlayerGuardComponent::bShowGuardText` で、HUD 未設定でもガード中の文字が出る（`AddOnScreenDebugMessage` フォールバック）。
+
 ## まだ / 次フェーズ
 
 - **プレイテスト（実機 Play）未実施** — Simulate では possess されないため要 Play。
+- プレイヤー HP UI は既存 Widget のまま（HUD には未描画）。統一するなら既存 Widget を `Combat->OnHpChanged` に再バインド、または HUD にプレイヤー HP バーを追加。
+- HUD は暫定デザイン（文字・単色バー）。本 UI は UMG で作り直し想定。
 - IMC のキーマッピング（現状フォールバックポーリング）
 - **ジャストガード**（中優先度）: `HandleGuardedHit` に `bJustGuard` 引数はあるが判定は未実装（今はゲージ2倍のフックのみ）
 - **UI Widget**: 攻撃ゲージ / 盾ゲージ / ガード残りサークル（`GetGaugeNormalized` / `GetShieldNormalized` / `GetGuardTimeNormalized` をバインド）。HP は既存 UI（要 `Combat->OnHpChanged` 再バインド）

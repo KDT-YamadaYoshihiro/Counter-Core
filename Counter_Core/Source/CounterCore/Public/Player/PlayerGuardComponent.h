@@ -62,6 +62,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Guard")
 	bool bLockMovementWhileGuarding = true;
 
+	/** true でガード中 / クールタイム を画面に文字表示（HUD 未設定でも分かるように）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Guard")
+	bool bShowGuardText = true;
+
 	// --- 実行時状態 ---
 
 	UPROPERTY(BlueprintReadOnly, Category = "Player|Guard")

@@ -5,6 +5,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
+#include "Engine/Engine.h"
 
 UPlayerGuardComponent::UPlayerGuardComponent()
 {
@@ -144,6 +145,25 @@ void UPlayerGuardComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 			SetGuarding(true);
 		}
 	}
+
+#if !UE_BUILD_SHIPPING
+	// アニメが無くてもガード中が分かるように画面表示（HUD 未設定でも動くフォールバック）。
+	if (bShowGuardText && GEngine)
+	{
+		const uint64 Key = static_cast<uint64>(GetUniqueID()) + 700000;
+		if (bGuarding)
+		{
+			GEngine->AddOnScreenDebugMessage(Key, 0.15f, FColor(80, 200, 255),
+				FString::Printf(TEXT("*** ガード中 ***  盾 %d/%d  残り %.1fs"),
+					FMath::RoundToInt(ShieldDurability), FMath::RoundToInt(MaxShieldDurability), GuardTimeRemaining));
+		}
+		else if (CooldownTimer > 0.f)
+		{
+			GEngine->AddOnScreenDebugMessage(Key, 0.15f, FColor(255, 150, 80),
+				FString::Printf(TEXT("ガード クールタイム %.1fs"), CooldownTimer));
+		}
+	}
+#endif
 
 	// 盾耐久の自然回復（仕様: ガード成功1秒後から）。
 	if (ShieldRegenDelayTimer > 0.f)
