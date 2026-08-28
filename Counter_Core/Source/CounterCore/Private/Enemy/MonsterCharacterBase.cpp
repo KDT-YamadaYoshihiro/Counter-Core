@@ -10,6 +10,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "CounterCoreDebug.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "GameFramework/PlayerController.h"
@@ -405,7 +406,7 @@ void AMonsterCharacterBase::PrintAI(const FString& Msg, const FColor& Color) con
 	}
 	UE_LOG(LogTemp, Log, TEXT("[MonsterAI] %s"), *Msg);
 #if !UE_BUILD_SHIPPING
-	if (GEngine)
+	if (GEngine && CounterCoreDebug::IsOnScreenDebugEnabled())
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 3.f, Color, FString::Printf(TEXT("[AI] %s"), *Msg));
 	}
@@ -576,7 +577,7 @@ void AMonsterCharacterBase::HandleToggleHitbox(bool bEnable)
 	{
 		HitActorsThisSwing.Reset();
 		ActiveHitbox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-		ActiveHitbox->SetHiddenInGame(false); // 判定中はワイヤーフレーム表示
+		ActiveHitbox->SetHiddenInGame(!CounterCoreDebug::IsOnScreenDebugEnabled()); // 判定中のワイヤーフレーム表示
 		// 判定ONの瞬間に既に重なっている相手も拾う。
 		TArray<AActor*> Overlapping;
 		ActiveHitbox->GetOverlappingActors(Overlapping, APawn::StaticClass());
@@ -797,6 +798,12 @@ void AMonsterCharacterBase::Tick(float Dt)
 
 void AMonsterCharacterBase::PollDebugKeys()
 {
+	// cc.Debug 0 でデバッグキー（U/I/O/K/L）とヒント表示をまとめて無効化。
+	if (!CounterCoreDebug::IsOnScreenDebugEnabled())
+	{
+		return;
+	}
+
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	if (!PC)
 	{

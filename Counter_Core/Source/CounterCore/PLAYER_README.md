@@ -77,6 +77,19 @@
 `ACounterCoreHUD` が BeginPlay 後に数回スイープして、`UW_GameUI` / `UW_HpGaugeOnHead` 等
 （`LegacyWidgetNameContains`）をビューポートから外す（`bRemoveLegacyWidgets`）。BP 編集不要。
 
+## デバッグ表示の一括 ON/OFF
+
+コンソール（`~`）で:
+
+```
+cc.Debug 0   … 画面デバッグをすべて非表示
+cc.Debug 1   … 表示（既定）
+```
+
+対象: プレイヤー/敵のオンスクリーン文字（`[P]` `[AI]` `[MonsterAttack]`、ガード中表示）、
+攻撃判定のワイヤーフレーム、敵の攻撃範囲サークル、敵デバッグキー（U/I/O/K/L）とヒント表示。
+各コンポーネントの `b***Events` / `bDrawDebug` との AND（`cc.Debug 0` なら個別設定に関係なく出ない）。
+
 ## まだ / 次フェーズ
 
 - **プレイテスト（実機 Play）未実施** — Simulate では possess されないため要 Play。

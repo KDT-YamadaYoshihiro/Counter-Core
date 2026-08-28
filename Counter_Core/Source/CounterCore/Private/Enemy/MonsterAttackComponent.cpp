@@ -4,6 +4,7 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "Engine/Engine.h"
+#include "CounterCoreDebug.h"
 
 UMonsterAttackComponent::UMonsterAttackComponent()
 {
@@ -149,7 +150,7 @@ void UMonsterAttackComponent::PrintAttackEvent(const TCHAR* Label, const FColor&
 	const FString Msg = FString::Printf(TEXT("%s : %s  (t=%.2f)"), *ActiveData.AttackId.ToString(), Label, ElapsedTime);
 	UE_LOG(LogTemp, Log, TEXT("[MonsterAttack] %s"), *Msg);
 #if !UE_BUILD_SHIPPING
-	if (GEngine)
+	if (GEngine && CounterCoreDebug::IsOnScreenDebugEnabled())
 	{
 		GEngine->AddOnScreenDebugMessage(-1, AttackEventPrintDuration, Color, Msg);
 	}
@@ -192,7 +193,7 @@ void UMonsterAttackComponent::TickComponent(float DeltaTime, ELevelTick TickType
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	if (bDrawDebug)
+	if (bDrawDebug && CounterCoreDebug::IsOnScreenDebugEnabled())
 	{
 		DrawDebugVisualization();
 	}

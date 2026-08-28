@@ -6,6 +6,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
 #include "Engine/Engine.h"
+#include "CounterCoreDebug.h"
 
 UPlayerGuardComponent::UPlayerGuardComponent()
 {
@@ -153,7 +154,7 @@ void UPlayerGuardComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 
 #if !UE_BUILD_SHIPPING
 	// アニメが無くてもガード中が分かるように画面表示（HUD 未設定でも動くフォールバック）。
-	if (bShowGuardText && GEngine)
+	if (bShowGuardText && GEngine && CounterCoreDebug::IsOnScreenDebugEnabled())
 	{
 		const uint64 Key = static_cast<uint64>(GetUniqueID()) + 700000;
 		if (bGuarding)

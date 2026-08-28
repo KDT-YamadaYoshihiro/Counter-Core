@@ -22,6 +22,7 @@
 #include "TimerManager.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "CounterCoreDebug.h"
 
 UPlayerActionComponent::UPlayerActionComponent()
 {
@@ -593,7 +594,7 @@ void UPlayerActionComponent::SetMeleeHitboxActive(bool bActive)
 		HitActorsThisSwing.Reset();
 		MeleeHitbox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 		MeleeHitbox->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
-		MeleeHitbox->SetHiddenInGame(false);
+		MeleeHitbox->SetHiddenInGame(!CounterCoreDebug::IsOnScreenDebugEnabled()); // 判定中のワイヤーフレーム表示
 		MeleeHitbox->UpdateOverlaps();
 		SweepMeleeOverlaps();
 	}
@@ -750,7 +751,7 @@ void UPlayerActionComponent::PrintAction(const FString& Msg, const FColor& Color
 	}
 	UE_LOG(LogTemp, Log, TEXT("[PlayerAction] %s"), *Msg);
 #if !UE_BUILD_SHIPPING
-	if (GEngine)
+	if (GEngine && CounterCoreDebug::IsOnScreenDebugEnabled())
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 3.f, Color, FString::Printf(TEXT("[P] %s"), *Msg));
 	}
