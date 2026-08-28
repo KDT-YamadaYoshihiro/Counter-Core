@@ -101,6 +101,43 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Battle")
 	void StartBattle();
 
+	// --- インゲームメニュー（仕様書 UI「メニュー」）---
+
+	UFUNCTION(BlueprintPure, Category = "Battle|Menu")
+	bool IsMenuOpen() const { return bMenuOpen; }
+
+	/** 0=続ける 1=操作説明 2=あきらめる */
+	UFUNCTION(BlueprintPure, Category = "Battle|Menu")
+	int32 GetMenuSelection() const { return MenuSelection; }
+
+	UFUNCTION(BlueprintPure, Category = "Battle|Menu")
+	bool IsMenuDialogOpen() const { return bMenuDialogOpen; }
+
+	UFUNCTION(BlueprintPure, Category = "Battle|Menu")
+	bool IsMenuDialogYes() const { return bMenuDialogYes; }
+
+	/** 操作説明ウィンドウを表示中か。 */
+	UFUNCTION(BlueprintPure, Category = "Battle|Menu")
+	bool IsControlsPanelOpen() const { return bControlsPanelOpen; }
+
+	UFUNCTION(BlueprintCallable, Category = "Battle|Menu")
+	void OpenMenu();
+	UFUNCTION(BlueprintCallable, Category = "Battle|Menu")
+	void CloseMenu();
+
+	/** メニューを開くキー（既定: Esc / ゲームパッド Special_Right = Start）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Battle|Menu")
+	bool bAllowMenu = true;
+
+	/** メニュー中の時間スケール（0 に近いほど停止）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Battle|Menu", meta = (ClampMin = "0.001", ClampMax = "1"))
+	float MenuTimeDilation = 0.01f;
+
+	UPROPERTY(BlueprintAssignable, Category = "Battle|Menu")
+	FBattleSimpleEvent OnMenuOpened;
+	UPROPERTY(BlueprintAssignable, Category = "Battle|Menu")
+	FBattleSimpleEvent OnMenuClosed;
+
 	UPROPERTY(BlueprintAssignable, Category = "Battle")
 	FBattleEnded OnBattleEnded;
 	UPROPERTY(BlueprintAssignable, Category = "Battle")
@@ -115,6 +152,9 @@ private:
 	void EndBattle(EBattleResult NewResult);
 	void SetActorsFrozen(bool bFrozen);
 	void ShowResult();
+	void PollMenuInput();
+	void ConfirmMenuSelection();
+	void GiveUp();
 
 	UFUNCTION() void HandlePlayerDied();
 	UFUNCTION() void HandleEnemyDied();
@@ -126,6 +166,13 @@ private:
 	float IntroTimer = 0.f;
 	float ElapsedTime = 0.f;
 	int32 GuardSuccessCount = 0;
+
+	// インゲームメニュー
+	bool bMenuOpen = false;
+	bool bMenuDialogOpen = false;
+	bool bMenuDialogYes = false;
+	bool bControlsPanelOpen = false;
+	int32 MenuSelection = 0;
 
 	UPROPERTY() TObjectPtr<UPlayerCombatComponent> PlayerCombat;
 	UPROPERTY() TObjectPtr<UPlayerGuardComponent> PlayerGuard;

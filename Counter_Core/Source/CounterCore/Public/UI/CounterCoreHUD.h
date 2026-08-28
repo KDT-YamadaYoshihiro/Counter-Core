@@ -46,6 +46,7 @@ private:
 	void DrawBar(float X, float Y, float W, float H, float FillFrac, float DelayFrac,
 		const FLinearColor& FillColor, const FLinearColor& DelayColor);
 	void DrawLabel(const FString& Text, float X, float Y, const FLinearColor& Color, float Scale = 1.f);
+	void DrawInGameMenu(class UBattleDirectorComponent* BD, float VW, float VH);
 
 	void SweepLegacyWidgets();
 

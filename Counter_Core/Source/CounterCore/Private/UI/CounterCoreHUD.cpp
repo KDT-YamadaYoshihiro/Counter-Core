@@ -8,6 +8,7 @@
 #include "Engine/Engine.h"
 #include "Engine/Font.h"
 #include "CanvasItem.h"
+#include "Misc/App.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 #include "EngineUtils.h"
@@ -144,13 +145,24 @@ void ACounterCoreHUD::DrawHUD()
 	APawn* Player = UGameplayStatics::GetPlayerPawn(this, 0);
 	UBattleDirectorComponent* BD = Player ? Player->FindComponentByClass<UBattleDirectorComponent>() : nullptr;
 
-	// ---- バトルタイム: 画面左上、.00 秒単位 ----
+	// ---- メニューアイコン（☰）: 画面左上（仕様書 UI「メニュー」）----
+	if (BD && !BD->IsIntroPlaying() && BD->GetResult() == EBattleResult::InProgress)
+	{
+		const float IX = 20.f, IY = 18.f, IW = 34.f, IH = 30.f;
+		DrawRect(FLinearColor(0.f, 0.f, 0.f, BD->IsMenuOpen() ? 0.75f : 0.45f), IX, IY, IW, IH);
+		for (int32 i = 0; i < 3; ++i)
+		{
+			DrawRect(FLinearColor::White, IX + 7.f, IY + 7.f + i * 8.f, IW - 14.f, 3.f);
+		}
+	}
+
+	// ---- バトルタイム: メニューアイコンの右（仕様書 UI: メニューUIの横、.00秒単位）----
 	if (BD)
 	{
 		const float T = BD->GetElapsedTime();
 		const int32 Min = FMath::FloorToInt(T / 60.f);
 		const float Sec = T - Min * 60.f;
-		DrawLabel(FString::Printf(TEXT("TIME  %02d:%05.2f"), Min, Sec), 28.f, 24.f, FLinearColor::White, 1.1f);
+		DrawLabel(FString::Printf(TEXT("%02d:%05.2f"), Min, Sec), 62.f, 22.f, FLinearColor::White, 1.1f);
 	}
 
 	// ---- ラッシュ中の画面ティント ----
@@ -337,5 +349,82 @@ void ACounterCoreHUD::DrawHUD()
 		{
 			DrawLabel(TEXT("YOU LOSE"), (VW * 0.5f) - 120.f, VH * 0.42f, FLinearColor(1.f, 0.3f, 0.3f), 3.0f);
 		}
+	}
+
+	// ---- インゲームメニュー（仕様書 UI「メニュー」）----
+	if (BD && BD->IsMenuOpen())
+	{
+		DrawInGameMenu(BD, VW, VH);
+	}
+}
+
+void ACounterCoreHUD::DrawInGameMenu(UBattleDirectorComponent* BD, float VW, float VH)
+{
+	const double RT = FApp::GetCurrentTime(); // 実時間（メニュー中は時間停止のため）
+
+	// パネル（画面左）
+	const float PW = VW * 0.36f;
+	DrawRect(FLinearColor(0.02f, 0.03f, 0.05f, 0.82f), 0.f, 0.f, PW, VH);
+	DrawRect(FLinearColor(0.8f, 0.85f, 0.95f, 0.9f), PW - 3.f, 0.f, 3.f, VH);
+
+	DrawLabel(TEXT("メニュー"), 40.f, VH * 0.13f, FLinearColor::White, 1.9f);
+
+	const TCHAR* Items[3] = { TEXT("続ける"), TEXT("操作説明"), TEXT("あきらめる") };
+	const float BaseX = 70.f;
+	const float StartY = VH * 0.26f;
+	const float StepY = VH * 0.11f;
+	const int32 Sel = BD->GetMenuSelection();
+
+	for (int32 i = 0; i < 3; ++i)
+	{
+		const bool bS = (i == Sel);
+		const float ItemY = StartY + StepY * i;
+		// 選択項目は文字が矢印方向（右）へ寄る。非選択は定位置。
+		const float TextX = bS ? BaseX + 44.f : BaseX;
+		DrawLabel(Items[i], TextX, ItemY, bS ? FLinearColor(1.f, 0.95f, 0.6f) : FLinearColor(0.7f, 0.72f, 0.78f), bS ? 1.7f : 1.4f);
+
+		if (bS)
+		{
+			// ◀ 印: 左右に揺れ続ける
+			const float Sway = FMath::Sin((float)RT * 6.f) * 10.f;
+			DrawLabel(TEXT("<"), TextX + 150.f + Sway, ItemY, FLinearColor(1.f, 0.25f, 0.25f), 1.9f);
+		}
+	}
+
+	// 操作説明パネル
+	if (BD->IsControlsPanelOpen())
+	{
+		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.7f), 0.f, 0.f, VW, VH);
+		const float CX = VW * 0.5f;
+		DrawLabel(TEXT("操作説明"), CX - 70.f, VH * 0.12f, FLinearColor::White, 2.0f);
+		const TCHAR* Lines[] = {
+			TEXT("移動        : 左スティック / WASD"),
+			TEXT("視点        : 右スティック / マウス"),
+			TEXT("ガード      : RT / 右クリック（長押し）"),
+			TEXT("小/中/大攻撃: X / Y / RB（左クリック=小）"),
+			TEXT("回避        : A / Space"),
+			TEXT("回復        : B / H"),
+			TEXT("メニュー    : Start / Esc"),
+		};
+		for (int32 i = 0; i < UE_ARRAY_COUNT(Lines); ++i)
+		{
+			DrawLabel(Lines[i], VW * 0.22f, VH * 0.25f + i * (VH * 0.07f), FLinearColor(0.9f, 0.9f, 0.92f), 1.2f);
+		}
+		DrawLabel(TEXT("戻る: Esc / B"), CX - 70.f, VH * 0.9f, FLinearColor(0.6f, 0.6f, 0.65f), 1.1f);
+		return;
+	}
+
+	// あきらめる確認ダイアログ
+	if (BD->IsMenuDialogOpen())
+	{
+		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.6f), 0.f, 0.f, VW, VH);
+		const float BW = VW * 0.44f, BH = VH * 0.22f;
+		DrawRect(FLinearColor(0.1f, 0.1f, 0.13f, 0.96f), (VW - BW) * 0.5f, (VH - BH) * 0.5f, BW, BH);
+		DrawLabel(TEXT("あきらめますか？"), VW * 0.5f - 130.f, VH * 0.44f, FLinearColor::White, 1.6f);
+		const bool bY = BD->IsMenuDialogYes();
+		DrawLabel(bY ? TEXT("＞ はい") : TEXT("  はい"), VW * 0.40f, VH * 0.54f,
+			bY ? FLinearColor(1.f, 0.9f, 0.f) : FLinearColor::White, 1.4f);
+		DrawLabel(!bY ? TEXT("＞ いいえ") : TEXT("  いいえ"), VW * 0.55f, VH * 0.54f,
+			!bY ? FLinearColor(1.f, 0.9f, 0.f) : FLinearColor::White, 1.4f);
 	}
 }

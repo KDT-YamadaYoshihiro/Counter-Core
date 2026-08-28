@@ -162,6 +162,12 @@ void UBattleDirectorComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	if (bMenuOpen)
+	{
+		PollMenuInput();
+		return;
+	}
+
 	if (bIntroActive)
 	{
 		IntroTimer -= DeltaTime;
@@ -175,7 +181,147 @@ void UBattleDirectorComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 	if (Result == EBattleResult::InProgress)
 	{
 		ElapsedTime += DeltaTime;
+
+		// メニューを開く（仕様書 UI「メニュー」: ボタン押下でバトル停止・展開）。
+		if (bAllowMenu)
+		{
+			if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
+			{
+				if (PC->WasInputKeyJustPressed(EKeys::Escape)
+					|| PC->WasInputKeyJustPressed(EKeys::Gamepad_Special_Right)
+					|| PC->WasInputKeyJustPressed(EKeys::Gamepad_Special_Left))
+				{
+					OpenMenu();
+				}
+			}
+		}
 	}
+}
+
+// --------------------------------------------------------------------------
+// インゲームメニュー
+// --------------------------------------------------------------------------
+
+void UBattleDirectorComponent::OpenMenu()
+{
+	if (bMenuOpen || bIntroActive || Result != EBattleResult::InProgress)
+	{
+		return;
+	}
+	bMenuOpen = true;
+	bMenuDialogOpen = false;
+	bControlsPanelOpen = false;
+	MenuSelection = 0;
+
+	SetActorsFrozen(true);
+	// バトル停止（時間をほぼ止める）。メニュー操作は Tick で拾うので完全 Pause はしない。
+	UGameplayStatics::SetGlobalTimeDilation(this, MenuTimeDilation);
+	OnMenuOpened.Broadcast();
+}
+
+void UBattleDirectorComponent::CloseMenu()
+{
+	if (!bMenuOpen)
+	{
+		return;
+	}
+	bMenuOpen = false;
+	bMenuDialogOpen = false;
+	bControlsPanelOpen = false;
+
+	UGameplayStatics::SetGlobalTimeDilation(this, 1.f);
+	SetActorsFrozen(false);
+	OnMenuClosed.Broadcast();
+}
+
+void UBattleDirectorComponent::PollMenuInput()
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (!PC)
+	{
+		return;
+	}
+
+	auto Pressed = [PC](FKey A, FKey B, FKey C) {
+		return PC->WasInputKeyJustPressed(A) || PC->WasInputKeyJustPressed(B) || PC->WasInputKeyJustPressed(C);
+	};
+	const bool bUp = Pressed(EKeys::W, EKeys::Up, EKeys::Gamepad_DPad_Up) || PC->WasInputKeyJustPressed(EKeys::Gamepad_LeftStick_Up);
+	const bool bDown = Pressed(EKeys::S, EKeys::Down, EKeys::Gamepad_DPad_Down) || PC->WasInputKeyJustPressed(EKeys::Gamepad_LeftStick_Down);
+	const bool bConfirm = Pressed(EKeys::Enter, EKeys::SpaceBar, EKeys::Gamepad_FaceButton_Bottom);
+	const bool bCancel = Pressed(EKeys::Escape, EKeys::Gamepad_FaceButton_Right, EKeys::BackSpace);
+
+	// 操作説明パネル表示中はキャンセルでメニューへ戻るだけ。
+	if (bControlsPanelOpen)
+	{
+		if (bCancel || bConfirm)
+		{
+			bControlsPanelOpen = false;
+		}
+		return;
+	}
+
+	// あきらめる確認ダイアログ
+	if (bMenuDialogOpen)
+	{
+		if (PC->WasInputKeyJustPressed(EKeys::Left) || PC->WasInputKeyJustPressed(EKeys::Right)
+			|| PC->WasInputKeyJustPressed(EKeys::A) || PC->WasInputKeyJustPressed(EKeys::D)
+			|| PC->WasInputKeyJustPressed(EKeys::Gamepad_DPad_Left) || PC->WasInputKeyJustPressed(EKeys::Gamepad_DPad_Right))
+		{
+			bMenuDialogYes = !bMenuDialogYes;
+		}
+		if (bCancel)
+		{
+			bMenuDialogOpen = false;
+		}
+		else if (bConfirm)
+		{
+			if (bMenuDialogYes) { GiveUp(); }
+			else { bMenuDialogOpen = false; }
+		}
+		return;
+	}
+
+	// メニュー本体
+	if (bUp)   { MenuSelection = (MenuSelection + 2) % 3; }
+	if (bDown) { MenuSelection = (MenuSelection + 1) % 3; }
+
+	if (bCancel)
+	{
+		CloseMenu(); // Esc で閉じる = 続ける
+		return;
+	}
+	if (bConfirm)
+	{
+		ConfirmMenuSelection();
+	}
+}
+
+void UBattleDirectorComponent::ConfirmMenuSelection()
+{
+	switch (MenuSelection)
+	{
+	case 0: // 続ける
+		CloseMenu();
+		break;
+	case 1: // 操作説明
+		bControlsPanelOpen = true;
+		break;
+	case 2: // あきらめる → 確認ダイアログ
+		bMenuDialogOpen = true;
+		bMenuDialogYes = false;
+		break;
+	default:
+		break;
+	}
+}
+
+void UBattleDirectorComponent::GiveUp()
+{
+	// 仕様書 全体フロー: メニュー＞諦める＞はい → フェードアウト → リザルト（敗北）。
+	bMenuOpen = false;
+	bMenuDialogOpen = false;
+	UGameplayStatics::SetGlobalTimeDilation(this, 1.f);
+	EndBattle(EBattleResult::PlayerLose);
 }
 
 void UBattleDirectorComponent::HandleGuardSuccess()
