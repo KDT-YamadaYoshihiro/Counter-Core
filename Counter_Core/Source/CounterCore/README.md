@@ -46,6 +46,10 @@
 - `UMonsterAttackComponent::bPrintAttackEvents`（既定 true）: 攻撃の
   **開始 →（判定ON → 判定OFF）→ 終了 / 中断** を画面左上に Print String 表示（`AttackId : ラベル (t=経過秒)`）。
   表示秒数は `AttackEventPrintDuration`（既定 4 秒）。同内容は `LogTemp` にも出力。
+- **攻撃 VFX** `bPlayAttackVFX`（既定 true）: 攻撃の判定発生タイミング（HitActive 突入）で
+  `AttackVFX[AttackId]` の Niagara を武器（`AttackHitBox`）にアタッチしてスポーン（自動破棄）。
+  仮アセット: `NE_attack01`〜`NE_attack05`（`/Game/Knife_light/VFX/`、攻撃5の2段は両方 `NE_attack05`）。
+  位置調整は `AttackVFXOffset`。モジュール依存に `Niagara` を追加済み。
 
 ### 攻撃以外のステート（数値は仕様書 Monster シート準拠）
 

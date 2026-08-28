@@ -13,6 +13,7 @@ class UPrimitiveComponent;
 class UChildActorComponent;
 class UShapeComponent;
 class UCameraShakeBase;
+class UNiagaraSystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FMonsterStateChanged, EMonsterState, OldState, EMonsterState, NewState);
 
@@ -78,6 +79,18 @@ public:
 	/** 状態 → リアクション用モンタージュ（やられ/スタン/死亡）。未設定なら再生しないだけ。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
 	TMap<EMonsterState, TObjectPtr<UAnimMontage>> ReactionMontages;
+
+	/** 攻撃 ID → 判定発生時にスポーンする斬撃 VFX（Niagara）。代用: NE_attack01〜05。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	TMap<FName, TObjectPtr<UNiagaraSystem>> AttackVFX;
+
+	/** true で AttackVFX をスポーンする。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	bool bPlayAttackVFX = true;
+
+	/** 斬撃 VFX のアタッチ先からの相対オフセット。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	FVector AttackVFXOffset = FVector::ZeroVector;
 
 	/** 死亡時、死亡モンタージュの代わりにメッシュをラグドール化する（物理アセットが必要）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
@@ -180,6 +193,11 @@ public:
 	UFUNCTION(BlueprintNativeEvent, Category = "Monster|FX")
 	void PlayAttackMontage(FName AttackId);
 	virtual void PlayAttackMontage_Implementation(FName AttackId);
+
+	/** 斬撃 VFX 再生。既定: AttackVFX[AttackId] を武器（判定コンポーネント）にスポーン。 */
+	UFUNCTION(BlueprintNativeEvent, Category = "Monster|FX")
+	void PlayAttackVFX(FName AttackId);
+	virtual void PlayAttackVFX_Implementation(FName AttackId);
 
 	/** リアクション再生。既定: ReactionMontages[NewState] を再生。 */
 	UFUNCTION(BlueprintNativeEvent, Category = "Monster|FX")

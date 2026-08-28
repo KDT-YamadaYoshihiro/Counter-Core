@@ -14,6 +14,8 @@
 #include "TimerManager.h"
 #include "Camera/CameraShakeBase.h"
 #include "Camera/PlayerCameraManager.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimInstance.h"
 #include "Engine/DamageEvents.h"
@@ -561,6 +563,7 @@ void AMonsterCharacterBase::HandleToggleHitbox(bool bEnable)
 void AMonsterCharacterBase::HandlePlayAttackAnim(FName AttackId)
 {
 	PlayAttackMontage(AttackId);
+	PlayAttackVFX(AttackId);
 }
 
 void AMonsterCharacterBase::OnHitboxOverlap(UPrimitiveComponent* /*OverlappedComp*/, AActor* OtherActor,
@@ -654,6 +657,37 @@ void AMonsterCharacterBase::PlayAttackMontage_Implementation(FName AttackId)
 			}
 		}
 	}
+}
+
+void AMonsterCharacterBase::PlayAttackVFX_Implementation(FName AttackId)
+{
+	if (!bPlayAttackVFX)
+	{
+		return;
+	}
+	TObjectPtr<UNiagaraSystem>* Found = AttackVFX.Find(AttackId);
+	if (!Found || !*Found)
+	{
+		return;
+	}
+
+	// 武器の判定コンポーネント（無ければ武器ルート／メッシュ）にアタッチしてスポーン。
+	USceneComponent* Attach = ActiveHitbox;
+	if (!Attach && WeaponActor && WeaponActor->GetChildActor())
+	{
+		Attach = WeaponActor->GetChildActor()->GetRootComponent();
+	}
+	if (!Attach)
+	{
+		Attach = GetMesh();
+	}
+	if (!Attach)
+	{
+		return;
+	}
+
+	UNiagaraFunctionLibrary::SpawnSystemAttached(*Found, Attach, NAME_None, AttackVFXOffset,
+		FRotator::ZeroRotator, EAttachLocation::SnapToTargetIncludingScale, true);
 }
 
 void AMonsterCharacterBase::PlayReaction_Implementation(EMonsterState NewState)
