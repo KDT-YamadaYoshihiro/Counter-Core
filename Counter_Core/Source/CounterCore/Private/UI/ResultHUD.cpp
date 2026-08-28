@@ -5,8 +5,10 @@
 #include "CanvasItem.h"
 #include "CanvasTypes.h"
 #include "Engine/Engine.h"
-#include "Engine/Font.h"
 #include "Engine/GameInstance.h"
+#include "Styling/CoreStyle.h"
+#include "Fonts/FontMeasure.h"
+#include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
 #include "Blueprint/UserWidget.h"
 #include "Kismet/GameplayStatics.h"
@@ -184,20 +186,40 @@ void AResultHUD::Execute()
 // 描画
 // --------------------------------------------------------------------------
 
-void AResultHUD::DrawStr(const FString& Text, float X, float Y, float Scale, const FLinearColor& Color, bool bCenterX, bool bCenterY)
+float AResultHUD::MeasureWidth(const FString& Text, int32 PixelSize, bool bBold) const
 {
-	UFont* Font = GEngine ? GEngine->GetLargeFont() : nullptr;
-	if (!Font || !Canvas)
+	if (!FSlateApplication::IsInitialized())
+	{
+		return Text.Len() * PixelSize * 0.5f;
+	}
+	const FSlateFontInfo Font = FCoreStyle::GetDefaultFontStyle(bBold ? TEXT("Bold") : TEXT("Regular"), FMath::Max(1, PixelSize));
+	const TSharedRef<FSlateFontMeasure> M = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
+	return M->Measure(Text, Font).X;
+}
+
+void AResultHUD::DrawStr(const FString& Text, float X, float Y, int32 PixelSize, const FLinearColor& Color,
+	bool bCenterX, bool bCenterY, bool bBold)
+{
+	if (!Canvas)
 	{
 		return;
 	}
-	float W = 0.f, H = 0.f;
-	Canvas->TextSize(Font, Text, W, H, Scale, Scale);
+	PixelSize = FMath::Max(1, PixelSize);
+	// スケール拡大したビットマップフォントではなく、目標サイズで直接ラスタライズした
+	// Slate フォントで描く（拡大ボケを防ぐ）。
+	const FSlateFontInfo Font = FCoreStyle::GetDefaultFontStyle(bBold ? TEXT("Bold") : TEXT("Regular"), PixelSize);
+
+	float W = 0.f, H = (float)PixelSize;
+	if (FSlateApplication::IsInitialized())
+	{
+		const FVector2D Sz = FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(Text, Font);
+		W = Sz.X; H = Sz.Y;
+	}
 	const float PX = bCenterX ? X - W * 0.5f : X;
 	const float PY = bCenterY ? Y - H * 0.5f : Y;
+
 	FCanvasTextItem Item(FVector2D(PX, PY), FText::FromString(Text), Font, Color);
-	Item.Scale = FVector2D(Scale, Scale);
-	Item.EnableShadow(FLinearColor(0.f, 0.f, 0.f, 0.9f));
+	Item.EnableShadow(FLinearColor(0.f, 0.f, 0.f, 0.85f));
 	Canvas->DrawItem(Item);
 }
 
@@ -222,6 +244,8 @@ void AResultHUD::DrawHUD()
 		Canvas->DrawItem(Dim);
 	}
 
+	auto Px = [VH](float Frac) { return FMath::RoundToInt(VH * Frac); };
+
 	const UBattleResultSubsystem* R = GetResultSys();
 	const bool bHas = R && R->bHasResult;
 	const bool bWon = R && R->bWon;
@@ -229,44 +253,41 @@ void AResultHUD::DrawHUD()
 	if (bWon)
 	{
 		// "VICTORY" 上中央（白）
-		DrawStr(TEXT("VICTORY"), VW * 0.5f, VH * 0.12f, 3.6f, FLinearColor::White, true, false);
+		DrawStr(TEXT("VICTORY"), VW * 0.5f, VH * 0.10f, Px(0.085f), FLinearColor::White, true, false, true);
 
 		// スコア（ランク）: 左側に "スコア" 小ラベル + 巨大な黄色い文字
-		DrawStr(TEXT("スコア"), VW * 0.07f, VH * 0.22f, 1.3f, FLinearColor::White, false, false);
+		DrawStr(TEXT("スコア"), VW * 0.08f, VH * 0.24f, Px(0.035f), FLinearColor::White, false, false);
 		const FString RankStr = bHas ? UBattleResultSubsystem::RankToString(R->Rank) : TEXT("-");
-		DrawStr(RankStr, VW * 0.12f, VH * 0.28f, 11.0f, FLinearColor(1.f, 0.92f, 0.f, 1.f), false, false);
+		DrawStr(RankStr, VW * 0.10f, VH * 0.27f, Px(0.42f), FLinearColor(1.f, 0.86f, 0.f, 1.f), false, false, true);
 
 		// タイム: 中央右に "タイム" ラベル + MM:SS（.cc は小さめ）
-		DrawStr(TEXT("タイム"), VW * 0.52f, VH * 0.42f, 1.9f, FLinearColor::White, false, false);
+		DrawStr(TEXT("タイム"), VW * 0.52f, VH * 0.42f, Px(0.05f), FLinearColor::White, false, false);
 		if (bHas)
 		{
 			const FString T = R->GetTimeText();              // "MM:SS.cc"
 			FString MMSS = T, Centis = TEXT("");
 			int32 Dot;
 			if (T.FindChar('.', Dot)) { MMSS = T.Left(Dot); Centis = T.Mid(Dot); }
-			DrawStr(MMSS, VW * 0.55f, VH * 0.52f, 2.6f, FLinearColor::White, false, false);
-			float MW = 0.f, MH = 0.f;
-			if (GEngine && GEngine->GetLargeFont())
-			{
-				Canvas->TextSize(GEngine->GetLargeFont(), MMSS, MW, MH, 2.6f, 2.6f);
-			}
-			DrawStr(Centis, VW * 0.55f + MW + 4.f, VH * 0.52f + MH * 0.42f, 1.4f, FLinearColor::White, false, false);
+			const int32 BigPx = Px(0.08f);
+			DrawStr(MMSS, VW * 0.55f, VH * 0.50f, BigPx, FLinearColor::White, false, false, true);
+			const float MW = MeasureWidth(MMSS, BigPx, true);
+			DrawStr(Centis, VW * 0.55f + MW + 6.f, VH * 0.50f + BigPx * 0.42f, Px(0.038f), FLinearColor::White, false, false);
 
 			// ガード成功回数（仕様書テキストに記載。小さめに添える）
 			DrawStr(FString::Printf(TEXT("ガード成功  %d"), R->GuardSuccessCount),
-				VW * 0.55f, VH * 0.64f, 1.1f, FLinearColor(0.85f, 0.85f, 0.85f, 1.f), false, false);
+				VW * 0.55f, VH * 0.63f, Px(0.028f), FLinearColor(0.85f, 0.85f, 0.85f, 1.f), false, false);
 		}
 	}
 	else
 	{
 		// "LOSS" 中央（暗い赤）
-		DrawStr(TEXT("LOSS"), VW * 0.5f, VH * 0.45f, 4.2f, FLinearColor(0.72f, 0.06f, 0.06f, 1.f), true, true);
+		DrawStr(TEXT("LOSS"), VW * 0.5f, VH * 0.45f, Px(0.13f), FLinearColor(0.72f, 0.06f, 0.06f, 1.f), true, true, true);
 
 		// 仕様: 「スコアとタイムは勝っても負けても表示」。操作受付後に控えめに出す。
 		if (bInputArmed && bHas)
 		{
 			DrawStr(FString::Printf(TEXT("タイム  %s      スコア  D"), *R->GetTimeText()),
-				VW * 0.5f, VH * 0.58f, 1.2f, FLinearColor(0.85f, 0.85f, 0.85f, 1.f), true, false);
+				VW * 0.5f, VH * 0.58f, Px(0.03f), FLinearColor(0.85f, 0.85f, 0.85f, 1.f), true, false);
 		}
 	}
 
@@ -274,7 +295,7 @@ void AResultHUD::DrawHUD()
 	if (bInputArmed && !bDialogOpen)
 	{
 		DrawStr(TEXT("A 再挑戦     B タイトルへ     X ゲーム終了"),
-			VW * 0.5f, VH * 0.93f, 1.3f, FLinearColor::White, true, false);
+			VW * 0.5f, VH * 0.92f, Px(0.032f), FLinearColor::White, true, false);
 	}
 
 	// 確認ダイアログ
@@ -293,10 +314,10 @@ void AResultHUD::DrawHUD()
 			DialogChoice == EResultChoice::Retry ? TEXT("再挑戦しますか？") :
 			DialogChoice == EResultChoice::Title ? TEXT("タイトルへ戻りますか？") :
 			TEXT("ゲームを終了しますか？");
-		DrawStr(Q, VW * 0.5f, VH * 0.44f, 1.5f, FLinearColor::White, true, false);
-		DrawStr(bDialogYes ? TEXT("[ はい ]") : TEXT("はい"), VW * 0.42f, VH * 0.55f, 1.4f,
-			bDialogYes ? FLinearColor(1.f, 0.92f, 0.f, 1.f) : FLinearColor::White, true, false);
-		DrawStr(!bDialogYes ? TEXT("[ いいえ ]") : TEXT("いいえ"), VW * 0.58f, VH * 0.55f, 1.4f,
-			!bDialogYes ? FLinearColor(1.f, 0.92f, 0.f, 1.f) : FLinearColor::White, true, false);
+		DrawStr(Q, VW * 0.5f, VH * 0.44f, Px(0.04f), FLinearColor::White, true, false);
+		DrawStr(bDialogYes ? TEXT("＞ はい") : TEXT("  はい"), VW * 0.43f, VH * 0.54f, Px(0.038f),
+			bDialogYes ? FLinearColor(1.f, 0.86f, 0.f, 1.f) : FLinearColor::White, true, false);
+		DrawStr(!bDialogYes ? TEXT("＞ いいえ") : TEXT("  いいえ"), VW * 0.57f, VH * 0.54f, Px(0.038f),
+			!bDialogYes ? FLinearColor(1.f, 0.86f, 0.f, 1.f) : FLinearColor::White, true, false);
 	}
 }

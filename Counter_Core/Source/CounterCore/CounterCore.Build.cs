@@ -16,7 +16,9 @@ public class CounterCore : ModuleRules
 			"GameplayTasks",
 			"AIModule",
 			"Niagara",
-			"UMG"
+			"UMG",
+			"Slate",
+			"SlateCore"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

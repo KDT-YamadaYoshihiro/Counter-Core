@@ -71,7 +71,9 @@ private:
 	void Execute();
 	void SweepLegacyWidget();
 
-	void DrawStr(const FString& Text, float X, float Y, float Scale, const FLinearColor& Color, bool bCenterX, bool bCenterY);
+	void DrawStr(const FString& Text, float X, float Y, int32 PixelSize, const FLinearColor& Color,
+		bool bCenterX, bool bCenterY, bool bBold = false);
+	float MeasureWidth(const FString& Text, int32 PixelSize, bool bBold) const;
 
 	bool bInputArmed = false;
 	bool bDialogOpen = false;
