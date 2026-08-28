@@ -194,6 +194,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Monster|FX")
 	void ApplyHitStop();
 
+	/**
+	 * 武器（BP_Weapon）がヒットを検知したときに呼ばれる互換フック。
+	 * 実ダメージ・ヒットストップ・カメラシェイクは C++ の攻撃判定（OnHitboxOverlap）が処理するので、
+	 * 既定では何もしない。BP で override して独自のヒット演出を足せる。
+	 */
+	UFUNCTION(BlueprintNativeEvent, Category = "Monster|Combat")
+	void OnWeaponHit();
+	virtual void OnWeaponHit_Implementation() {}
+
 	// --- デバッグ発火（キー U / I / O、または BP から直接）---
 
 	UFUNCTION(BlueprintCallable, Category = "Monster|Debug")

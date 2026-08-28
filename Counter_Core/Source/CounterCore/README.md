@@ -99,9 +99,18 @@
     カプセル / 移動設定** だけなので、それらを `BP_Enemy` に直接設定し直した:
     - Mesh: `SKM_Quinn_Simple`、AnimClass: `ABP_MyCharacter`、Mesh 相対 `(0,0,-89) / (0,270,0)`
     - Capsule `R35 / H90`、`MaxWalkSpeed=350`、`OrientRotationToMovement=false`（回頭は C++ が管理）
-- 旧 `EventGraph` / `ChangeState` / `UserConstructionScript` グラフは **削除済み**（C++ ステートマシンと
-  二重実行になる／削除済み変数 `TargetCharacter` 参照でコンパイル失敗していたため）。
-  旧サブステート BP（`BP_Enemy_Idle` / `_Run` / `_Attack` / `_Stun` / `_Dead`）と `StateMap` は**未使用**（削除して可）。
+- 旧グラフは **全削除済み**（C++ ステートマシンと二重実行になる／旧 `BP_CharacterBase` 継承の
+  `TargetCharacter` 参照でコンパイル失敗していたため）: `EventGraph` / `ChangeState` /
+  `UserConstructionScript` / `BeginState*` / `GetWeapon` / `CreateWeapon` / `OnWeaponHit` /
+  `EnableAttackCollision` / `GetAngleToTarget` / `GetDistanceToTarget` / `GetStateObject` /
+  `hasHigherPriorityThan`。→ **BP_Enemy はコンパイル警告・エラーなし**。
+- `BP_Weapon` も旧 `OnWeaponHit` 転送関数と `EventGraph`（AttackHitBox オーバーラップ→敵通知）を削除。
+  当たり判定は C++（`MonsterCharacterBase` が BeginPlay で武器の `AttackHitBox` の Overlap にバインド）が担当。→ **BP_Weapon もクリーン**。
+- **旧サブ BP 群は未使用の孤立アセット**（互いに参照するだけ、`BP_Enemy` からの参照なし）。
+  コンパイルエラーが出るが実行には無影響。削除推奨:
+  `BP_Enemy_Idle` / `_Run` / `_Attack` / `_Stun` / `_Dead` / `BP_StateBase` /
+  `BP_EnemyAttack_Base` / `BP_EnemyAttack_1〜5_2` / `BP_EnemyAttackPatternBase` / `BP_EnemyAttackPattern1〜5` /
+  旧 `StateMap` 系。
 - ディテール設定済み: `DetectionRange=1000` / `EngageRange=300` / `ChaseSpeed=350` /
   `ActionLoop = [Combo3, Combo1, Combo1, Combo0, Combo1, Combo2, Combo3, Combo0, Combo1, Combo3, Combo4]` /
   `Combat.Status`（HP500 / 防御40 / スタン上限100）/
