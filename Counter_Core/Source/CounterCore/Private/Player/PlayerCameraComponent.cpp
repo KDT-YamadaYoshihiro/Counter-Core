@@ -61,7 +61,43 @@ void UPlayerCameraComponent::ResolveRefs()
 		{
 			World->GetTimerManager().SetTimer(ResolveTimer, this, &UPlayerCameraComponent::ResolveRefs, 0.5f, false);
 		}
+		return;
 	}
+
+	// 参照が揃った最初のタイミングで、いったん敵の方へカメラを即スナップ
+	// （開始時に毎回同じ画にするため。以降は Tick が維持する）。
+	if (bAimAtEnemyOnStart && !bDidStartSnap)
+	{
+		SnapAimToEnemy();
+	}
+}
+
+void UPlayerCameraComponent::SnapAimToEnemy()
+{
+	AActor* Owner = GetOwner();
+	APlayerController* PC = Owner ? Cast<APlayerController>(Cast<APawn>(Owner)->GetController()) : nullptr;
+	if (!Owner || !PC)
+	{
+		return;
+	}
+	float Dist = 0.f;
+	AActor* Enemy = FindNearestEnemy(Dist); // 距離制限なし
+	if (!Enemy)
+	{
+		return;
+	}
+	const FVector Pivot = Owner->GetActorLocation() + FVector(0.f, 0.f, LockedSocketOffset.Z);
+	FRotator Desired = (Enemy->GetActorLocation() - Pivot).Rotation();
+	Desired.Pitch = FMath::Clamp(Desired.Pitch, LockedPitchMin, LockedPitchMax);
+	Desired.Roll = 0.f;
+	PC->SetControlRotation(Desired);
+
+	// キャラも敵の方へ向ける。
+	FRotator Face = (Enemy->GetActorLocation() - Owner->GetActorLocation()).GetSafeNormal2D().Rotation();
+	Face.Pitch = 0.f; Face.Roll = 0.f;
+	Owner->SetActorRotation(Face);
+
+	bDidStartSnap = true;
 }
 
 AActor* UPlayerCameraComponent::FindNearestEnemy(float& OutDist) const
@@ -152,10 +188,25 @@ void UPlayerCameraComponent::TickComponent(float Dt, ELevelTick TickType, FActor
 		return;
 	}
 
+	TimeSinceBegin += Dt;
+
 	// --- ロック状態の更新（ヒステリシス）---
 	float Dist = 0.f;
 	AActor* Nearest = FindNearestEnemy(Dist);
-	if (bLockedOn)
+
+	// 開始直後は距離に関係なく敵ロック（毎回同じ画で戦闘に入るため）。
+	const bool bStartWindow = bAimAtEnemyOnStart && !bManualLockDisabled
+		&& TimeSinceBegin < StartAimHoldSeconds && Nearest != nullptr;
+
+	if (bStartWindow)
+	{
+		if (!bLockedOn)
+		{
+			SetLocked(true, Nearest);
+		}
+		LockTarget = Nearest;
+	}
+	else if (bLockedOn)
 	{
 		if (!Nearest || Dist > AutoLockBreakRange)
 		{
@@ -171,7 +222,7 @@ void UPlayerCameraComponent::TickComponent(float Dt, ELevelTick TickType, FActor
 		SetLocked(true, Nearest);
 	}
 	// 距離内に戻ったら手動解除フラグはリセット（次に近づいたら再ロック可）。
-	if (!Nearest || Dist > AutoLockBreakRange)
+	if (!bStartWindow && (!Nearest || Dist > AutoLockBreakRange))
 	{
 		bManualLockDisabled = false;
 	}

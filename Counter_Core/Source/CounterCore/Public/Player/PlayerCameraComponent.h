@@ -69,6 +69,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|LockOn", meta = (ClampMin = "0"))
 	float FacePlayerInterpSpeed = 12.f;
 
+	// --- 開始時のカメラ（毎回同じ画にする）---
+
+	/** true で開始直後は距離に関係なく敵の方へカメラを向ける（入るたびに角度が違う対策）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Start")
+	bool bAimAtEnemyOnStart = true;
+
+	/** 開始時に敵の方を向け続ける時間（秒）。開始演出（READY）より少し長めに。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Start", meta = (ClampMin = "0"))
+	float StartAimHoldSeconds = 4.f;
+
 	UFUNCTION(BlueprintPure, Category = "Camera|LockOn")
 	bool IsLockedOn() const { return bLockedOn; }
 
@@ -94,6 +104,7 @@ private:
 	void ResolveRefs();
 	AActor* FindNearestEnemy(float& OutDist) const;
 	void SetLocked(bool bNew, AActor* Target);
+	void SnapAimToEnemy();
 
 	UPROPERTY() TObjectPtr<USpringArmComponent> SpringArm;
 	UPROPERTY() TObjectPtr<UCameraComponent> Camera;
@@ -102,6 +113,8 @@ private:
 
 	bool bLockedOn = false;
 	bool bManualLockDisabled = false; // 手動でロックを切ったら距離内でも自動ロックしない
+	float TimeSinceBegin = 0.f;
+	bool bDidStartSnap = false;
 
 	// 元の設定（非ロック時に戻す用）
 	float DefaultArmLength = 400.f;
