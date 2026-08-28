@@ -6,11 +6,26 @@
 #include "Battle/BattleDirectorComponent.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
+#include "Engine/Font.h"
+#include "CanvasItem.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 #include "EngineUtils.h"
 #include "Blueprint/UserWidget.h"
 #include "TimerManager.h"
+
+namespace
+{
+	static UFont* HudUIFont()
+	{
+		static TWeakObjectPtr<UFont> Cached;
+		if (!Cached.IsValid())
+		{
+			Cached = LoadObject<UFont>(nullptr, TEXT("/Engine/EngineFonts/Roboto.Roboto"));
+		}
+		return Cached.Get();
+	}
+}
 
 void ACounterCoreHUD::BeginPlay()
 {
@@ -96,6 +111,20 @@ void ACounterCoreHUD::DrawBar(float X, float Y, float W, float H, float FillFrac
 
 void ACounterCoreHUD::DrawLabel(const FString& Text, float X, float Y, const FLinearColor& Color, float Scale)
 {
+	// Scale 1.0 ≒ 18px。目標サイズで直接ラスタライズした Slate フォントで描く
+	// （ビットマップフォントの拡大ボケを避ける）。
+	if (UFont* UIFont = HudUIFont())
+	{
+		const int32 Px = FMath::Max(6, FMath::RoundToInt(18.f * Scale));
+		FCanvasTextItem Item(FVector2D(X, Y), FText::FromString(Text),
+			FSlateFontInfo(UIFont, Px), Color);
+		Item.EnableShadow(FLinearColor(0.f, 0.f, 0.f, 0.8f));
+		if (Canvas)
+		{
+			Canvas->DrawItem(Item);
+			return;
+		}
+	}
 	UFont* Font = GEngine ? GEngine->GetMediumFont() : nullptr;
 	DrawText(Text, Color, X, Y, Font, Scale);
 }

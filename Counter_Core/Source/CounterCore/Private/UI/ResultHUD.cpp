@@ -5,10 +5,30 @@
 #include "CanvasItem.h"
 #include "CanvasTypes.h"
 #include "Engine/Engine.h"
+#include "Engine/Font.h"
 #include "Engine/GameInstance.h"
-#include "Styling/CoreStyle.h"
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
+
+namespace
+{
+	// UE 既定の UI フォント（Runtime。日本語フォールバックあり）。実サイズで直接
+	// ラスタライズして描くとキャンバスでも綺麗に出る（ビットマップ拡大にならない）。
+	static UFont* GetUIFont()
+	{
+		static TWeakObjectPtr<UFont> Cached;
+		if (!Cached.IsValid())
+		{
+			Cached = LoadObject<UFont>(nullptr, TEXT("/Engine/EngineFonts/Roboto.Roboto"));
+		}
+		return Cached.Get();
+	}
+
+	static FSlateFontInfo MakeFont(int32 PixelSize, bool bBold)
+	{
+		return FSlateFontInfo(GetUIFont(), FMath::Max(1, PixelSize), bBold ? TEXT("Bold") : TEXT("Regular"));
+	}
+}
 #include "GameFramework/PlayerController.h"
 #include "Blueprint/UserWidget.h"
 #include "Kismet/GameplayStatics.h"
@@ -188,13 +208,12 @@ void AResultHUD::Execute()
 
 float AResultHUD::MeasureWidth(const FString& Text, int32 PixelSize, bool bBold) const
 {
-	if (!FSlateApplication::IsInitialized())
+	const FSlateFontInfo Font = MakeFont(PixelSize, bBold);
+	if (FSlateApplication::IsInitialized())
 	{
-		return Text.Len() * PixelSize * 0.5f;
+		return (float)FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(Text, Font).X;
 	}
-	const FSlateFontInfo Font = FCoreStyle::GetDefaultFontStyle(bBold ? TEXT("Bold") : TEXT("Regular"), FMath::Max(1, PixelSize));
-	const TSharedRef<FSlateFontMeasure> M = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
-	return M->Measure(Text, Font).X;
+	return Text.Len() * PixelSize * 0.5f;
 }
 
 void AResultHUD::DrawStr(const FString& Text, float X, float Y, int32 PixelSize, const FLinearColor& Color,
@@ -204,21 +223,37 @@ void AResultHUD::DrawStr(const FString& Text, float X, float Y, int32 PixelSize,
 	{
 		return;
 	}
-	PixelSize = FMath::Max(1, PixelSize);
-	// スケール拡大したビットマップフォントではなく、目標サイズで直接ラスタライズした
-	// Slate フォントで描く（拡大ボケを防ぐ）。
-	const FSlateFontInfo Font = FCoreStyle::GetDefaultFontStyle(bBold ? TEXT("Bold") : TEXT("Regular"), PixelSize);
+	PixelSize = FMath::Clamp(PixelSize, 6, 200); // Slate フォントアトラスの上限を考慮
+	UFont* UIFont = GetUIFont();
 
-	float W = 0.f, H = (float)PixelSize;
-	if (FSlateApplication::IsInitialized())
+	if (UIFont)
 	{
-		const FVector2D Sz = FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(Text, Font);
-		W = Sz.X; H = Sz.Y;
+		const FSlateFontInfo Font = MakeFont(PixelSize, bBold);
+		float W = 0.f, H = (float)PixelSize;
+		if (FSlateApplication::IsInitialized())
+		{
+			const FVector2D Sz = FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(Text, Font);
+			W = (float)Sz.X; H = (float)Sz.Y;
+		}
+		FCanvasTextItem Item(FVector2D(bCenterX ? X - W * 0.5f : X, bCenterY ? Y - H * 0.5f : Y),
+			FText::FromString(Text), Font, Color);
+		Item.EnableShadow(FLinearColor(0.f, 0.f, 0.f, 0.85f));
+		Canvas->DrawItem(Item);
+		return;
 	}
-	const float PX = bCenterX ? X - W * 0.5f : X;
-	const float PY = bCenterY ? Y - H * 0.5f : Y;
 
-	FCanvasTextItem Item(FVector2D(PX, PY), FText::FromString(Text), Font, Color);
+	// フォールバック: 従来のビットマップフォント + スケール。
+	UFont* Fallback = GEngine ? GEngine->GetLargeFont() : nullptr;
+	if (!Fallback)
+	{
+		return;
+	}
+	const float Scale = PixelSize / 14.f;
+	float W = 0.f, H = 0.f;
+	Canvas->TextSize(Fallback, Text, W, H, Scale, Scale);
+	FCanvasTextItem Item(FVector2D(bCenterX ? X - W * 0.5f : X, bCenterY ? Y - H * 0.5f : Y),
+		FText::FromString(Text), Fallback, Color);
+	Item.Scale = FVector2D(Scale, Scale);
 	Item.EnableShadow(FLinearColor(0.f, 0.f, 0.f, 0.85f));
 	Canvas->DrawItem(Item);
 }
@@ -255,10 +290,10 @@ void AResultHUD::DrawHUD()
 		// "VICTORY" 上中央（白）
 		DrawStr(TEXT("VICTORY"), VW * 0.5f, VH * 0.10f, Px(0.085f), FLinearColor::White, true, false, true);
 
-		// スコア（ランク）: 左側に "スコア" 小ラベル + 巨大な黄色い文字
-		DrawStr(TEXT("スコア"), VW * 0.08f, VH * 0.24f, Px(0.035f), FLinearColor::White, false, false);
+		// スコア（ランク）: 左側に "スコア" 小ラベル + 大きな黄色い文字
+		DrawStr(TEXT("スコア"), VW * 0.09f, VH * 0.26f, Px(0.038f), FLinearColor::White, false, false);
 		const FString RankStr = bHas ? UBattleResultSubsystem::RankToString(R->Rank) : TEXT("-");
-		DrawStr(RankStr, VW * 0.10f, VH * 0.27f, Px(0.42f), FLinearColor(1.f, 0.86f, 0.f, 1.f), false, false, true);
+		DrawStr(RankStr, VW * 0.16f, VH * 0.34f, Px(0.30f), FLinearColor(1.f, 0.86f, 0.f, 1.f), true, false, true);
 
 		// タイム: 中央右に "タイム" ラベル + MM:SS（.cc は小さめ）
 		DrawStr(TEXT("タイム"), VW * 0.52f, VH * 0.42f, Px(0.05f), FLinearColor::White, false, false);
