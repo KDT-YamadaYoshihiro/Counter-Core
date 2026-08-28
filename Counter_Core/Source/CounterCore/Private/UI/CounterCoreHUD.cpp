@@ -1,6 +1,7 @@
 #include "UI/CounterCoreHUD.h"
 #include "Player/PlayerCombatComponent.h"
 #include "Player/PlayerGuardComponent.h"
+#include "Player/PlayerCameraComponent.h"
 #include "Enemy/MonsterCombatComponent.h"
 #include "Battle/BattleDirectorComponent.h"
 #include "Engine/Canvas.h"
@@ -264,6 +265,34 @@ void ACounterCoreHUD::DrawHUD()
 		{
 			const float A = FMath::Clamp(1.f - Since / 0.8f, 0.f, 1.f);
 			DrawLabel(TEXT("JUST GUARD!"), (VW * 0.5f) - 90.f, VH * 0.38f, FLinearColor(0.4f, 0.9f, 1.f, A), 1.8f);
+		}
+	}
+
+	// ---- ロックオン表示（点＋円、仕様書 UI「ターゲットロック」）----
+	if (UPlayerCameraComponent* Cam = Player->FindComponentByClass<UPlayerCameraComponent>())
+	{
+		bool bValid = false;
+		const FVector WorldLoc = Cam->GetLockReticleWorldLocation(bValid);
+		if (bValid)
+		{
+			const FVector Proj = Project(WorldLoc);
+			const FVector2D Screen(Proj.X, Proj.Y);
+			if (Proj.Z > 0.f && Screen.X > 0.f && Screen.Y > 0.f && Screen.X < VW && Screen.Y < VH)
+			{
+				const FLinearColor Col(0.9f, 0.95f, 1.f, 0.9f);
+				// 点
+				DrawRect(Col, Screen.X - 3.f, Screen.Y - 3.f, 6.f, 6.f);
+				// 円（線分で近似）
+				const int32 Seg = 24;
+				const float R = 26.f;
+				for (int32 i = 0; i < Seg; ++i)
+				{
+					const float A0 = (2.f * PI * i) / Seg;
+					const float A1 = (2.f * PI * (i + 1)) / Seg;
+					DrawLine(Screen.X + R * FMath::Cos(A0), Screen.Y + R * FMath::Sin(A0),
+						Screen.X + R * FMath::Cos(A1), Screen.Y + R * FMath::Sin(A1), Col, 1.5f);
+				}
+			}
 		}
 	}
 
