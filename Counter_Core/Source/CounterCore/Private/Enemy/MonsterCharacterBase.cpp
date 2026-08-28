@@ -2,6 +2,7 @@
 #include "Enemy/MonsterCombatComponent.h"
 #include "Enemy/MonsterAttackComponent.h"
 #include "Components/BoxComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/ShapeComponent.h"
 #include "Components/ChildActorComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -209,19 +210,41 @@ void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 		return;
 	}
 
-	// 攻撃を抜けるときはタイムライン中断。
-	if (Old == EMonsterState::Attack && NewState != EMonsterState::Attack && Attack && Attack->IsAttacking())
+	// 攻撃を抜けるときはタイムライン中断（＝攻撃を中止）。
+	if (NewState != EMonsterState::Attack && Attack && Attack->IsAttacking())
 	{
 		Attack->CancelAttack();
 	}
+	// 判定コリジョンは攻撃以外の状態では必ず OFF。
+	if (NewState != EMonsterState::Attack && ActiveHitbox)
+	{
+		ActiveHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		ActiveHitbox->SetHiddenInGame(true);
+	}
 
 	State = NewState;
+
+	// 移動ロック: スタン / 死亡 中は動かない。復帰時は歩行に戻す。
+	if (UCharacterMovementComponent* Move = GetCharacterMovement())
+	{
+		if (NewState == EMonsterState::Stun || NewState == EMonsterState::Dead)
+		{
+			Move->StopMovementImmediately();
+			Move->DisableMovement();
+		}
+		else if (Move->MovementMode == MOVE_None)
+		{
+			Move->SetMovementMode(MOVE_Walking);
+		}
+	}
 
 	switch (NewState)
 	{
 	case EMonsterState::Hitstun:
 	{
+		// 仕様書 Monster「やられ」: 攻撃中止 → やられアニメ → [0.1]後方0.2Mノックバック+スタン+10 → [0.4]硬直終了。
 		HitstunTimer = Combat ? Combat->HitstunDuration : 0.4f;
+		bMovingToEngageCombo = false;
 		// 中断された攻撃が「やられ連鎖しない」（攻撃5）かどうかを覚えておく。
 		bInterruptedAttackNoChain = false;
 		if (Attack && CurrentComboAttacks.IsValidIndex(ComboIndex - 1))
@@ -230,29 +253,46 @@ void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 			const FMonsterAttackFrameData D = Attack->GetAttackData(CurrentComboAttacks[ComboIndex - 1], bFound);
 			bInterruptedAttackNoChain = bFound && D.bNoHitstunChain;
 		}
-		if (Combat)
-		{
-			Combat->AddStun(Combat->GuardStaggerStunGain);
-		}
+		// スタン値 +10 は UMonsterCombatComponent::HandleIncomingHit（ガード分岐）が既に加算済み。
 		if (TargetActor)
 		{
 			HitstunKnockbackDir = (GetActorLocation() - TargetActor->GetActorLocation()).GetSafeNormal2D();
 		}
+		PrintAI(TEXT("やられ（ガード成功）"), FColor::Orange);
 		break;
 	}
 	case EMonsterState::Stun:
+		// 仕様書 Monster「スタン」: スタン値上限到達 → 15秒行動不能 / Battle: ラッシュ（被ダメ 1.2倍）。
+		bMovingToEngageCombo = false;
 		if (Combat)
 		{
 			Combat->BeginStun();
 		}
+		PrintAI(FString::Printf(TEXT("スタン（%.0f秒）"), Combat ? Combat->StunDuration : 15.f), FColor::Purple);
 		break;
 	case EMonsterState::Dead:
-		if (UCharacterMovementComponent* Move = GetCharacterMovement())
+	{
+		// 仕様書: HP0 → AI 停止。Battle: モンスターが倒れる → リザルトへ（Combat->OnDied で通知済み）。
+		bMovingToEngageCombo = false;
+		if (GetCapsuleComponent())
 		{
-			Move->StopMovementImmediately();
-			Move->DisableMovement();
+			GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
 		}
+		if (bRagdollOnDeath && GetMesh() && GetMesh()->GetPhysicsAsset())
+		{
+			GetMesh()->SetCollisionProfileName(TEXT("Ragdoll"));
+			GetMesh()->SetAllBodiesSimulatePhysics(true);
+			GetMesh()->SetSimulatePhysics(true);
+			GetMesh()->WakeAllRigidBodies();
+		}
+		SetActorTickEnabled(false);
+		if (Attack)
+		{
+			Attack->SetComponentTickEnabled(false);
+		}
+		PrintAI(TEXT("死亡"), FColor::Red);
 		break;
+	}
 	case EMonsterState::Attack:
 		LaunchNextAttackInCombo();
 		break;

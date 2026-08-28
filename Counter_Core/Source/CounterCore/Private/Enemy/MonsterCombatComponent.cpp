@@ -94,8 +94,14 @@ void UMonsterCombatComponent::AddStun(int32 Amount)
 
 void UMonsterCombatComponent::BeginStun()
 {
+	// 仕様書 Battle: スタン中はプレイヤー→モンスターの与ダメージが 1.2 倍（ラッシュ）。
+	bTargetInRush = true;
+
+	// 仕様書 Monster「スタン / プレイヤーへの影響 = 攻撃ゲージの全回復」。
+	// 実際のゲージ全回復はプレイヤー側が OnStunned を購読して行う。
 	OnStunned.Broadcast();
 
+	// 仕様書 Monster「スタン / 解除方法 = 時間経過 15秒後」。
 	if (StunDuration > 0.f)
 	{
 		if (const UWorld* World = GetWorld())
@@ -113,7 +119,9 @@ void UMonsterCombatComponent::EndStun()
 		World->GetTimerManager().ClearTimer(StunTimerHandle);
 	}
 
+	// 仕様書 Monster「スタン / 自然回復 = 無し」「復帰時の無敵時間 = 無し」。
 	Status.Stun = 0;
+	bTargetInRush = false;
 	OnStunRecovered.Broadcast();
 
 	if (IsAlive())

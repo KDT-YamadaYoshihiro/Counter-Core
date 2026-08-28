@@ -47,6 +47,17 @@
   **開始 →（判定ON → 判定OFF）→ 終了 / 中断** を画面左上に Print String 表示（`AttackId : ラベル (t=経過秒)`）。
   表示秒数は `AttackEventPrintDuration`（既定 4 秒）。同内容は `LogTemp` にも出力。
 
+### 攻撃以外のステート（数値は仕様書 Monster シート準拠）
+
+| ステート | 発動 | 挙動 | 仕様値 |
+|---|---|---|---|
+| **やられ**（Hitstun） | `Combat->HandleIncomingHit(power, bGuardedByPlayer=true)`（プレイヤーのガード成功） | 攻撃を即中止 → `PlayReaction(Hitstun)` → 後方ノックバック → 硬直明けで**次のコンボ**へ（攻撃5 = `bNoHitstunChain` は中断せず攻撃継続） | 後方 **0.2M** ノックバック / スタン値 **+10** / 硬直 **0.4秒**（`HitstunKnockbackM` / `GuardStaggerStunGain` / `HitstunDuration`） |
+| **スタン**（Stun） | スタン値が上限に到達（`AddStun` / ガードスタッガー / プレイヤー攻撃） | AI 完全停止・移動ロック（`MOVE_None`）・判定 OFF → `PlayReaction(Stun)` → `Combat->OnStunned`（プレイヤーはこれを購読して攻撃ゲージ全回復）→ 15秒後 `EndStun` でスタン値 0・`OnStunRecovered`・AI 再開（復帰時無敵なし） | 解除 **15秒**（`StunDuration`）/ 上限 **100**（`Status.MaxStun`）/ 自然回復なし / スタン中はプレイヤー与ダメージ **1.2倍**（`bTargetInRush` → `RushDamageMultiplier`、Battle シート） |
+| **死亡**（Dead） | HP が 0 | `Combat->OnDied` 発火（→ `GM_Battle` でリザルトへ）→ AI 完全停止・Tick 停止・移動/判定/被弾コリジョン無効 → `bRagdollOnDeath`（既定 true・`PA_Mannequin` 使用）でラグドール、false なら `PlayReaction(Dead)` モンタージュ。以降どの遷移も無視（終端） | HP **0〜500** / 防御 **40**（`Status`） |
+
+- `AMonsterCharacterBase::bPrintAIEvents`（既定 true）で「やられ」「スタン」「死亡」も画面/ログに出力。
+- スタン値の蓄積量（プレイヤー攻撃1発ごと）は Player シート管轄。プレイヤー側から `Combat->AddStun(値)` を呼ぶ（弱5/中15/大50）。
+
 ## `BP_Enemy` の現状（このブランチで実施済み）
 
 - 親クラスを `BP_CharacterBase`（BP）→ `MonsterCharacterBase`（C++）に **reparent 済み**。
@@ -55,8 +66,9 @@
     カプセル / 移動設定** だけなので、それらを `BP_Enemy` に直接設定し直した:
     - Mesh: `SKM_Quinn_Simple`、AnimClass: `ABP_MyCharacter`、Mesh 相対 `(0,0,-89) / (0,270,0)`
     - Capsule `R35 / H90`、`MaxWalkSpeed=350`、`OrientRotationToMovement=false`（回頭は C++ が管理）
-- 旧 `EventGraph` / `ChangeState` グラフは **削除済み**（C++ ステートマシンと二重実行になるため）。
-  旧サブステート BP（`BP_Enemy_Idle` / `_Run` / `_Attack` / `_Stun` / `_Dead`）と `StateMap` は**未使用**。
+- 旧 `EventGraph` / `ChangeState` / `UserConstructionScript` グラフは **削除済み**（C++ ステートマシンと
+  二重実行になる／削除済み変数 `TargetCharacter` 参照でコンパイル失敗していたため）。
+  旧サブステート BP（`BP_Enemy_Idle` / `_Run` / `_Attack` / `_Stun` / `_Dead`）と `StateMap` は**未使用**（削除して可）。
 - ディテール設定済み: `DetectionRange=1000` / `EngageRange=300` / `ChaseSpeed=350` /
   `ActionLoop = [Combo3, Combo1, Combo1, Combo0, Combo1, Combo2, Combo3, Combo0, Combo1, Combo3, Combo4]` /
   `Combat.Status`（HP500 / 防御40 / スタン上限100）/
@@ -72,7 +84,8 @@
 
 1. **AnimMontage（本アセット差し替え）**: 現在は全攻撃が `MM_Attack_01_Montage` の**仮**。
    本モンタージュができたら `BP_Enemy` の `Attack Montages` を攻撃ごとに差し替え。
-   `Reaction Montages`（`Hitstun` / `Stun` / `Dead`）は未設定＝リアクションが鳴らないだけ。
+   `Reaction Montages`（`Hitstun` / `Stun`）は未設定＝リアクションが鳴らないだけ（挙動は動く）。
+   `Dead` はラグドールで代用中（`bRagdollOnDeath`）。死亡モンタージュを使うなら false にして `Reaction Montages[Dead]` を設定。
 2. **武器の握り位置**: `hand_r` ボーン直付けなので少しズレる可能性あり。
    `BP_Enemy` → `WeaponActor` コンポーネントの相対トランスフォームで調整。
 3. **プレイヤー側の配線**:

@@ -70,9 +70,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
 	TMap<FName, TObjectPtr<UAnimMontage>> AttackMontages;
 
-	/** 状態 → リアクション用モンタージュ（やられ/スタン/死亡）。 */
+	/** 状態 → リアクション用モンタージュ（やられ/スタン/死亡）。未設定なら再生しないだけ。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
 	TMap<EMonsterState, TObjectPtr<UAnimMontage>> ReactionMontages;
+
+	/** 死亡時、死亡モンタージュの代わりにメッシュをラグドール化する（物理アセットが必要）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	bool bRagdollOnDeath = true;
 
 	/** 攻撃判定ボックスの大きさ（武器を使わない場合のフォールバック用）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
