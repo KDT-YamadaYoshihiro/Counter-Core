@@ -7,6 +7,7 @@
 class UPlayerCombatComponent;
 class UPlayerGuardComponent;
 class UMonsterCombatComponent;
+class AHUD;
 
 UENUM(BlueprintType)
 enum class EBattleResult : uint8
@@ -56,13 +57,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Battle|Intro", meta = (ClampMin = "0"))
 	float IntroDuration = 3.f;
 
-	// --- リザルト遷移 ---
+	// --- リザルト ---
 
-	/** 決着後に開くレベル名（空なら遷移しない。GM 側で処理する場合も空でよい）。 */
+	/**
+	 * true: レベル遷移せず、決着した戦闘シーンの上にリザルト HUD を出す
+	 *       （仕様書のリザルト画は背景に戦闘シーンが見えている）。
+	 * false: ResultLevelName へレベル遷移する。
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Battle|Result")
+	bool bShowResultInPlace = true;
+
+	/** bShowResultInPlace のときに差し替える HUD クラス（AResultHUD を指定）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Battle|Result")
+	TSubclassOf<AHUD> ResultHUDClass;
+
+	/** 決着後に開くレベル名（bShowResultInPlace=false のとき）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Battle|Result")
 	FName ResultLevelName;
 
-	/** 決着からレベル遷移までの待ち（秒・実時間）。 */
+	/** 決着からリザルト表示までの待ち（秒・実時間）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Battle|Result", meta = (ClampMin = "0"))
 	float ResultTransitionDelay = 3.f;
 
@@ -100,6 +113,7 @@ private:
 	void ResolveRefs();
 	void EndBattle(EBattleResult NewResult);
 	void SetActorsFrozen(bool bFrozen);
+	void ShowResult();
 
 	UFUNCTION() void HandlePlayerDied();
 	UFUNCTION() void HandleEnemyDied();

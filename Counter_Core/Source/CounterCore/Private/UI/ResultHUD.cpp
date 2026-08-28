@@ -32,7 +32,6 @@ void AResultHUD::BeginPlay()
 		}
 	}
 
-	// リザルトは入力優先。マウスカーソルは出しておく（任意）。
 	if (APlayerController* PC = GetPC())
 	{
 		FInputModeGameAndUI Mode;
@@ -61,7 +60,7 @@ void AResultHUD::SweepLegacyWidget()
 			}
 		}
 	}
-	if (SweepCount >= 20)
+	if (SweepCount >= 20 && GetWorld())
 	{
 		GetWorld()->GetTimerManager().ClearTimer(SweepTimer);
 	}
@@ -85,38 +84,28 @@ UBattleResultSubsystem* AResultHUD::GetResultSys() const
 	return nullptr;
 }
 
-float AResultHUD::MenuDelay() const
-{
-	const UBattleResultSubsystem* R = GetResultSys();
-	const bool bWon = R && R->bWon;
-	return bWon ? WinMenuDelaySeconds : LossMenuDelaySeconds;
-}
+// --------------------------------------------------------------------------
 
 void AResultHUD::UpdateState()
 {
-	const float Dt = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.f;
-	Elapsed += Dt;
+	Elapsed += GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.f;
 
-	if (!bMenuVisible && Elapsed >= MenuDelay())
+	const UBattleResultSubsystem* R = GetResultSys();
+	const bool bWon = R && R->bWon;
+	const float Delay = bWon ? WinInputDelaySeconds : LossInputDelaySeconds;
+	if (!bInputArmed && Elapsed >= Delay)
 	{
-		bMenuVisible = true;
+		bInputArmed = true;
 	}
 
-	if (bExecuting)
+	if (bExecuting || !bInputArmed)
 	{
 		return;
 	}
-	if (bDialogOpen)
-	{
-		HandleDialogInput();
-	}
-	else if (bMenuVisible)
-	{
-		HandleMenuInput();
-	}
+	HandleInput();
 }
 
-void AResultHUD::HandleMenuInput()
+void AResultHUD::HandleInput()
 {
 	APlayerController* PC = GetPC();
 	if (!PC)
@@ -124,81 +113,52 @@ void AResultHUD::HandleMenuInput()
 		return;
 	}
 
-	const bool bDown = PC->WasInputKeyJustPressed(EKeys::S) || PC->WasInputKeyJustPressed(EKeys::Down)
-		|| PC->WasInputKeyJustPressed(EKeys::Gamepad_DPad_Down) || PC->WasInputKeyJustPressed(EKeys::Gamepad_LeftStick_Down);
-	const bool bUp = PC->WasInputKeyJustPressed(EKeys::W) || PC->WasInputKeyJustPressed(EKeys::Up)
-		|| PC->WasInputKeyJustPressed(EKeys::Gamepad_DPad_Up) || PC->WasInputKeyJustPressed(EKeys::Gamepad_LeftStick_Up);
-
-	const int32 Count = 3;
-	int32 Idx = (int32)Selected;
-	if (bDown) { Idx = (Idx + 1) % Count; }
-	if (bUp)   { Idx = (Idx + Count - 1) % Count; }
-	Selected = (EResultMenuItem)Idx;
-
-	// 決定（A / Enter / Space）→ 現在の選択でダイアログ。
-	if (PC->WasInputKeyJustPressed(EKeys::Gamepad_FaceButton_Bottom)
-		|| PC->WasInputKeyJustPressed(EKeys::Enter) || PC->WasInputKeyJustPressed(EKeys::SpaceBar))
+	if (bDialogOpen)
 	{
-		OpenDialogFor(Selected);
+		if (PC->WasInputKeyJustPressed(EKeys::Left) || PC->WasInputKeyJustPressed(EKeys::Right)
+			|| PC->WasInputKeyJustPressed(EKeys::A) || PC->WasInputKeyJustPressed(EKeys::D)
+			|| PC->WasInputKeyJustPressed(EKeys::Gamepad_DPad_Left) || PC->WasInputKeyJustPressed(EKeys::Gamepad_DPad_Right)
+			|| PC->WasInputKeyJustPressed(EKeys::Gamepad_LeftStick_Left) || PC->WasInputKeyJustPressed(EKeys::Gamepad_LeftStick_Right))
+		{
+			bDialogYes = !bDialogYes;
+		}
+		if (PC->WasInputKeyJustPressed(EKeys::Gamepad_FaceButton_Right) || PC->WasInputKeyJustPressed(EKeys::Escape))
+		{
+			bDialogOpen = false;
+			return;
+		}
+		if (PC->WasInputKeyJustPressed(EKeys::Gamepad_FaceButton_Bottom)
+			|| PC->WasInputKeyJustPressed(EKeys::Enter) || PC->WasInputKeyJustPressed(EKeys::SpaceBar))
+		{
+			if (bDialogYes) { Execute(); }
+			else { bDialogOpen = false; }
+		}
 		return;
 	}
-	// 仕様: B = タイトル、X = ゲーム終了（直接指定 → ダイアログ）。
-	if (PC->WasInputKeyJustPressed(EKeys::Gamepad_FaceButton_Right) || PC->WasInputKeyJustPressed(EKeys::BackSpace))
+
+	// 仕様: A = 再挑戦(バトル)、B = タイトル、X = ゲーム終了。押すと確認ダイアログ。
+	if (PC->WasInputKeyJustPressed(EKeys::Gamepad_FaceButton_Bottom) || PC->WasInputKeyJustPressed(EKeys::Enter))
 	{
-		OpenDialogFor(EResultMenuItem::Title);
+		OpenDialog(EResultChoice::Retry);
+	}
+	else if (PC->WasInputKeyJustPressed(EKeys::Gamepad_FaceButton_Right) || PC->WasInputKeyJustPressed(EKeys::BackSpace))
+	{
+		OpenDialog(EResultChoice::Title);
 	}
 	else if (PC->WasInputKeyJustPressed(EKeys::Gamepad_FaceButton_Left) || PC->WasInputKeyJustPressed(EKeys::X))
 	{
-		OpenDialogFor(EResultMenuItem::Quit);
+		OpenDialog(EResultChoice::Quit);
 	}
 }
 
-void AResultHUD::OpenDialogFor(EResultMenuItem Item)
+void AResultHUD::OpenDialog(EResultChoice Choice)
 {
-	DialogItem = Item;
-	Selected = Item;
+	DialogChoice = Choice;
 	bDialogOpen = true;
-	bDialogYes = false; // 既定は「いいえ」（誤爆防止）
+	bDialogYes = false; // 既定「いいえ」（誤爆防止）
 }
 
-void AResultHUD::HandleDialogInput()
-{
-	APlayerController* PC = GetPC();
-	if (!PC)
-	{
-		return;
-	}
-
-	if (PC->WasInputKeyJustPressed(EKeys::A) || PC->WasInputKeyJustPressed(EKeys::Left)
-		|| PC->WasInputKeyJustPressed(EKeys::D) || PC->WasInputKeyJustPressed(EKeys::Right)
-		|| PC->WasInputKeyJustPressed(EKeys::Gamepad_DPad_Left) || PC->WasInputKeyJustPressed(EKeys::Gamepad_DPad_Right)
-		|| PC->WasInputKeyJustPressed(EKeys::Gamepad_LeftStick_Left) || PC->WasInputKeyJustPressed(EKeys::Gamepad_LeftStick_Right))
-	{
-		bDialogYes = !bDialogYes;
-	}
-
-	// キャンセル（B / Esc）
-	if (PC->WasInputKeyJustPressed(EKeys::Gamepad_FaceButton_Right) || PC->WasInputKeyJustPressed(EKeys::Escape))
-	{
-		bDialogOpen = false;
-		return;
-	}
-	// 確定（A / Enter）
-	if (PC->WasInputKeyJustPressed(EKeys::Gamepad_FaceButton_Bottom)
-		|| PC->WasInputKeyJustPressed(EKeys::Enter) || PC->WasInputKeyJustPressed(EKeys::SpaceBar))
-	{
-		if (bDialogYes)
-		{
-			ExecuteSelected();
-		}
-		else
-		{
-			bDialogOpen = false;
-		}
-	}
-}
-
-void AResultHUD::ExecuteSelected()
+void AResultHUD::Execute()
 {
 	if (bExecuting)
 	{
@@ -206,19 +166,17 @@ void AResultHUD::ExecuteSelected()
 	}
 	bExecuting = true;
 
-	switch (DialogItem)
+	if (UBattleResultSubsystem* R = GetResultSys())
 	{
-	case EResultMenuItem::Retry:
-		if (UBattleResultSubsystem* R = GetResultSys()) { R->Clear(); }
-		UGameplayStatics::OpenLevel(this, RetryLevelName);
-		break;
-	case EResultMenuItem::Title:
-		if (UBattleResultSubsystem* R = GetResultSys()) { R->Clear(); }
-		UGameplayStatics::OpenLevel(this, TitleLevelName);
-		break;
-	case EResultMenuItem::Quit:
-		UKismetSystemLibrary::QuitGame(this, GetPC(), EQuitPreference::Quit, false);
-		break;
+		if (DialogChoice != EResultChoice::Quit) { R->Clear(); }
+	}
+
+	switch (DialogChoice)
+	{
+	case EResultChoice::Retry: UGameplayStatics::OpenLevel(this, RetryLevelName); break;
+	case EResultChoice::Title: UGameplayStatics::OpenLevel(this, TitleLevelName); break;
+	case EResultChoice::Quit:  UKismetSystemLibrary::QuitGame(this, GetPC(), EQuitPreference::Quit, false); break;
+	default: bExecuting = false; break;
 	}
 }
 
@@ -226,7 +184,7 @@ void AResultHUD::ExecuteSelected()
 // 描画
 // --------------------------------------------------------------------------
 
-void AResultHUD::DrawTextCentered(const FString& Text, float CX, float CY, float Scale, const FLinearColor& Color)
+void AResultHUD::DrawStr(const FString& Text, float X, float Y, float Scale, const FLinearColor& Color, bool bCenterX, bool bCenterY)
 {
 	UFont* Font = GEngine ? GEngine->GetLargeFont() : nullptr;
 	if (!Font || !Canvas)
@@ -235,24 +193,11 @@ void AResultHUD::DrawTextCentered(const FString& Text, float CX, float CY, float
 	}
 	float W = 0.f, H = 0.f;
 	Canvas->TextSize(Font, Text, W, H, Scale, Scale);
-	FCanvasTextItem Item(FVector2D(CX - W * 0.5f, CY - H * 0.5f), FText::FromString(Text), Font, Color);
+	const float PX = bCenterX ? X - W * 0.5f : X;
+	const float PY = bCenterY ? Y - H * 0.5f : Y;
+	FCanvasTextItem Item(FVector2D(PX, PY), FText::FromString(Text), Font, Color);
 	Item.Scale = FVector2D(Scale, Scale);
-	Item.EnableShadow(FLinearColor(0.f, 0.f, 0.f, 0.85f));
-	Canvas->DrawItem(Item);
-}
-
-void AResultHUD::DrawTextLeft(const FString& Text, float X, float CY, float Scale, const FLinearColor& Color)
-{
-	UFont* Font = GEngine ? GEngine->GetLargeFont() : nullptr;
-	if (!Font || !Canvas)
-	{
-		return;
-	}
-	float W = 0.f, H = 0.f;
-	Canvas->TextSize(Font, Text, W, H, Scale, Scale);
-	FCanvasTextItem Item(FVector2D(X, CY - H * 0.5f), FText::FromString(Text), Font, Color);
-	Item.Scale = FVector2D(Scale, Scale);
-	Item.EnableShadow(FLinearColor(0.f, 0.f, 0.f, 0.85f));
+	Item.EnableShadow(FLinearColor(0.f, 0.f, 0.f, 0.9f));
 	Canvas->DrawItem(Item);
 }
 
@@ -269,77 +214,89 @@ void AResultHUD::DrawHUD()
 	const float VW = Canvas->SizeX;
 	const float VH = Canvas->SizeY;
 
-	// 背景（不透明の暗幕。裏の残ウィジェットも隠す）。
-	FCanvasTileItem BG(FVector2D(0, 0), FVector2D(VW, VH), FLinearColor(0.03f, 0.03f, 0.05f, 1.f));
-	BG.BlendMode = SE_BLEND_Opaque;
-	Canvas->DrawItem(BG);
-
-	const UBattleResultSubsystem* R = GetResultSys();
-	const bool bWon = R && R->bWon;
-	const bool bHas = R && R->bHasResult;
-
-	// --- 勝敗結果 ---
-	const FString Headline = !bHas ? TEXT("RESULT")
-		: (bWon ? TEXT("YOU WIN") : TEXT("LOSS"));
-	DrawTextCentered(Headline, VW * 0.5f, VH * 0.16f, 4.0f,
-		bWon ? FLinearColor(1.f, 0.92f, 0.4f, 1.f) : FLinearColor(1.f, 0.35f, 0.35f, 1.f));
-
-	// 敗北時、選択項目が出るまでは「LOSS」だけ（仕様）。
-	const bool bShowStats = bWon || bMenuVisible || !bHas;
-
-	if (bShowStats && bHas)
+	// 背景うっすら暗幕（不透明にはしない＝奥のシーンが見える）。
+	if (DimAlpha > 0.f)
 	{
-		// --- スコア（ランク）---
-		const FString RankStr = UBattleResultSubsystem::RankToString(R->Rank);
-		DrawTextCentered(TEXT("SCORE"), VW * 0.5f, VH * 0.30f, 1.4f, FLinearColor(0.7f, 0.7f, 0.75f, 1.f));
-		DrawTextCentered(RankStr, VW * 0.5f, VH * 0.40f, 6.0f, FLinearColor(1.f, 1.f, 1.f, 1.f));
-
-		// --- タイム / ガード成功回数（勝っても負けても表示）---
-		DrawTextCentered(FString::Printf(TEXT("TIME    %s"), *R->GetTimeText()),
-			VW * 0.5f, VH * 0.52f, 1.6f, FLinearColor::White);
-		DrawTextCentered(FString::Printf(TEXT("GUARD   %d"), R->GuardSuccessCount),
-			VW * 0.5f, VH * 0.58f, 1.6f, FLinearColor::White);
-	}
-
-	// --- 選択項目 ---
-	if (bMenuVisible)
-	{
-		const TCHAR* Labels[3] = { TEXT("さいちょうせん"), TEXT("タイトルへ"), TEXT("ゲームしゅうりょう") };
-		const float BaseY = VH * 0.70f;
-		const float Step = VH * 0.07f;
-		for (int32 i = 0; i < 3; ++i)
-		{
-			const bool bSel = ((int32)Selected == i);
-			const FString Line = FString::Printf(TEXT("%s %s"), bSel ? TEXT("▶") : TEXT("  "), Labels[i]);
-			DrawTextCentered(Line, VW * 0.5f, BaseY + Step * i, bSel ? 1.8f : 1.4f,
-				bSel ? FLinearColor(1.f, 0.95f, 0.6f, 1.f) : FLinearColor(0.75f, 0.75f, 0.8f, 1.f));
-		}
-
-		DrawTextCentered(TEXT("A: けってい    B: タイトル    X: しゅうりょう"),
-			VW * 0.5f, VH * 0.95f, 1.0f, FLinearColor(0.55f, 0.55f, 0.6f, 1.f));
-	}
-
-	// --- ダイアログ ---
-	if (bDialogOpen)
-	{
-		FCanvasTileItem Dim(FVector2D(0, 0), FVector2D(VW, VH), FLinearColor(0.f, 0.f, 0.f, 0.55f));
+		FCanvasTileItem Dim(FVector2D(0, 0), FVector2D(VW, VH), FLinearColor(0.f, 0.f, 0.f, DimAlpha));
 		Dim.BlendMode = SE_BLEND_Translucent;
 		Canvas->DrawItem(Dim);
+	}
 
-		const float BoxW = VW * 0.5f, BoxH = VH * 0.24f;
-		const float BoxX = (VW - BoxW) * 0.5f, BoxY = (VH - BoxH) * 0.5f;
-		FCanvasTileItem Box(FVector2D(BoxX, BoxY), FVector2D(BoxW, BoxH), FLinearColor(0.1f, 0.1f, 0.14f, 1.f));
+	const UBattleResultSubsystem* R = GetResultSys();
+	const bool bHas = R && R->bHasResult;
+	const bool bWon = R && R->bWon;
+
+	if (bWon)
+	{
+		// "VICTORY" 上中央（白）
+		DrawStr(TEXT("VICTORY"), VW * 0.5f, VH * 0.12f, 3.6f, FLinearColor::White, true, false);
+
+		// スコア（ランク）: 左側に "スコア" 小ラベル + 巨大な黄色い文字
+		DrawStr(TEXT("スコア"), VW * 0.07f, VH * 0.22f, 1.3f, FLinearColor::White, false, false);
+		const FString RankStr = bHas ? UBattleResultSubsystem::RankToString(R->Rank) : TEXT("-");
+		DrawStr(RankStr, VW * 0.12f, VH * 0.28f, 11.0f, FLinearColor(1.f, 0.92f, 0.f, 1.f), false, false);
+
+		// タイム: 中央右に "タイム" ラベル + MM:SS（.cc は小さめ）
+		DrawStr(TEXT("タイム"), VW * 0.52f, VH * 0.42f, 1.9f, FLinearColor::White, false, false);
+		if (bHas)
+		{
+			const FString T = R->GetTimeText();              // "MM:SS.cc"
+			FString MMSS = T, Centis = TEXT("");
+			int32 Dot;
+			if (T.FindChar('.', Dot)) { MMSS = T.Left(Dot); Centis = T.Mid(Dot); }
+			DrawStr(MMSS, VW * 0.55f, VH * 0.52f, 2.6f, FLinearColor::White, false, false);
+			float MW = 0.f, MH = 0.f;
+			if (GEngine && GEngine->GetLargeFont())
+			{
+				Canvas->TextSize(GEngine->GetLargeFont(), MMSS, MW, MH, 2.6f, 2.6f);
+			}
+			DrawStr(Centis, VW * 0.55f + MW + 4.f, VH * 0.52f + MH * 0.42f, 1.4f, FLinearColor::White, false, false);
+
+			// ガード成功回数（仕様書テキストに記載。小さめに添える）
+			DrawStr(FString::Printf(TEXT("ガード成功  %d"), R->GuardSuccessCount),
+				VW * 0.55f, VH * 0.64f, 1.1f, FLinearColor(0.85f, 0.85f, 0.85f, 1.f), false, false);
+		}
+	}
+	else
+	{
+		// "LOSS" 中央（暗い赤）
+		DrawStr(TEXT("LOSS"), VW * 0.5f, VH * 0.45f, 4.2f, FLinearColor(0.72f, 0.06f, 0.06f, 1.f), true, true);
+
+		// 仕様: 「スコアとタイムは勝っても負けても表示」。操作受付後に控えめに出す。
+		if (bInputArmed && bHas)
+		{
+			DrawStr(FString::Printf(TEXT("タイム  %s      スコア  D"), *R->GetTimeText()),
+				VW * 0.5f, VH * 0.58f, 1.2f, FLinearColor(0.85f, 0.85f, 0.85f, 1.f), true, false);
+		}
+	}
+
+	// 右下: ボタンヒント（操作受付後）
+	if (bInputArmed && !bDialogOpen)
+	{
+		DrawStr(TEXT("A 再挑戦     B タイトルへ     X ゲーム終了"),
+			VW * 0.5f, VH * 0.93f, 1.3f, FLinearColor::White, true, false);
+	}
+
+	// 確認ダイアログ
+	if (bDialogOpen)
+	{
+		FCanvasTileItem D2(FVector2D(0, 0), FVector2D(VW, VH), FLinearColor(0.f, 0.f, 0.f, 0.5f));
+		D2.BlendMode = SE_BLEND_Translucent;
+		Canvas->DrawItem(D2);
+
+		const float BW = VW * 0.5f, BH = VH * 0.22f;
+		FCanvasTileItem Box(FVector2D((VW - BW) * 0.5f, (VH - BH) * 0.5f), FVector2D(BW, BH), FLinearColor(0.1f, 0.1f, 0.13f, 0.96f));
 		Box.BlendMode = SE_BLEND_Translucent;
 		Canvas->DrawItem(Box);
 
-		const TCHAR* Q[3] = { TEXT("さいちょうせん しますか？"), TEXT("タイトルへ もどりますか？"), TEXT("ゲームを しゅうりょう しますか？") };
-		DrawTextCentered(Q[(int32)DialogItem], VW * 0.5f, BoxY + BoxH * 0.30f, 1.4f, FLinearColor::White);
-
-		const FString Yes = FString::Printf(TEXT("%s はい"), bDialogYes ? TEXT("▶") : TEXT("  "));
-		const FString No  = FString::Printf(TEXT("%s いいえ"), !bDialogYes ? TEXT("▶") : TEXT("  "));
-		DrawTextCentered(Yes, VW * 0.42f, BoxY + BoxH * 0.68f, 1.4f,
-			bDialogYes ? FLinearColor(1.f, 0.95f, 0.6f, 1.f) : FLinearColor(0.7f, 0.7f, 0.75f, 1.f));
-		DrawTextCentered(No, VW * 0.58f, BoxY + BoxH * 0.68f, 1.4f,
-			!bDialogYes ? FLinearColor(1.f, 0.95f, 0.6f, 1.f) : FLinearColor(0.7f, 0.7f, 0.75f, 1.f));
+		const TCHAR* Q =
+			DialogChoice == EResultChoice::Retry ? TEXT("再挑戦しますか？") :
+			DialogChoice == EResultChoice::Title ? TEXT("タイトルへ戻りますか？") :
+			TEXT("ゲームを終了しますか？");
+		DrawStr(Q, VW * 0.5f, VH * 0.44f, 1.5f, FLinearColor::White, true, false);
+		DrawStr(bDialogYes ? TEXT("[ はい ]") : TEXT("はい"), VW * 0.42f, VH * 0.55f, 1.4f,
+			bDialogYes ? FLinearColor(1.f, 0.92f, 0.f, 1.f) : FLinearColor::White, true, false);
+		DrawStr(!bDialogYes ? TEXT("[ いいえ ]") : TEXT("いいえ"), VW * 0.58f, VH * 0.55f, 1.4f,
+			!bDialogYes ? FLinearColor(1.f, 0.92f, 0.f, 1.f) : FLinearColor::White, true, false);
 	}
 }

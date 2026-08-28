@@ -4,6 +4,7 @@
 #include "Player/PlayerGuardComponent.h"
 #include "Enemy/MonsterCombatComponent.h"
 #include "Engine/GameInstance.h"
+#include "GameFramework/HUD.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -201,7 +202,7 @@ void UBattleDirectorComponent::EndBattle(EBattleResult NewResult)
 
 	OnBattleEnded.Broadcast(Result);
 
-	// 仕様書 リザルト: 勝敗 / タイム / ガード成功回数 / ランクを次シーンへ引き継ぐ。
+	// 仕様書 リザルト: 勝敗 / タイム / ガード成功回数 / ランクを引き継ぐ。
 	if (UGameInstance* GI = UGameplayStatics::GetGameInstance(this))
 	{
 		if (UBattleResultSubsystem* ResultSys = GI->GetSubsystem<UBattleResultSubsystem>())
@@ -210,19 +211,37 @@ void UBattleDirectorComponent::EndBattle(EBattleResult NewResult)
 		}
 	}
 
-	// リザルトレベルへ遷移（設定されていれば）。
-	if (World && !ResultLevelName.IsNone())
+	// 少し待ってからリザルトを表示（終了演出のあいだ）。
+	if (World)
 	{
 		TWeakObjectPtr<UBattleDirectorComponent> WeakThis(this);
-		const FName Level = ResultLevelName;
 		FTimerDelegate Del;
-		Del.BindLambda([WeakThis, Level]()
+		Del.BindLambda([WeakThis]()
 		{
-			if (WeakThis.IsValid())
-			{
-				UGameplayStatics::OpenLevel(WeakThis.Get(), Level);
-			}
+			if (WeakThis.IsValid()) { WeakThis->ShowResult(); }
 		});
 		World->GetTimerManager().SetTimer(ResultTimer, Del, FMath::Max(0.1f, ResultTransitionDelay), false);
+	}
+	else
+	{
+		ShowResult();
+	}
+}
+
+void UBattleDirectorComponent::ShowResult()
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+
+	// 仕様書のリザルト画は「決着した戦闘シーンの上」に出る。レベル遷移せず HUD を差し替える。
+	if (bShowResultInPlace && PC && ResultHUDClass)
+	{
+		PC->ClientSetHUD(ResultHUDClass);
+		return;
+	}
+
+	// フォールバック: リザルトレベルへ遷移。
+	if (GetWorld() && !ResultLevelName.IsNone())
+	{
+		UGameplayStatics::OpenLevel(this, ResultLevelName);
 	}
 }

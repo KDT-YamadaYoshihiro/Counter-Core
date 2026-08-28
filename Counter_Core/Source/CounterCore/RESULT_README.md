@@ -23,24 +23,27 @@
 | C | 上記を満たさない**勝利** |
 | D | 敗北 |
 
-## 書き込み: `UBattleDirectorComponent`（BP_Player に既存）
+## 書き込み: `UBattleDirectorComponent`（BP_Player）
 
 - `ResolveRefs` で `PlayerGuardComponent` を掴み `OnGuardSuccess` → `GuardSuccessCount++`
-- `EndBattle` で `Subsystem->SubmitResult(win, ElapsedTime, GuardSuccessCount)` → その後
-  `ResultLevelName`(=`LV_Result`) を `OpenLevel`（`ResultTransitionDelay` 3s）
+- `EndBattle`: `Subsystem->SubmitResult(win, ElapsedTime, GuardSuccessCount)` → 
+  `ResultTransitionDelay`(3s、終了演出のあいだ) 後に `ShowResult()`
+- `ShowResult()`: **`bShowResultInPlace=true`（既定）なら `PC->ClientSetHUD(ResultHUDClass)`**
+  でレベル遷移せずに戦闘シーンの上へリザルト HUD を出す（仕様書の画は背景に戦闘シーンが
+  見えているため）。false のときだけ `ResultLevelName` へ `OpenLevel`。
+  `ResultHUDClass` は BP_Player の BattleDirector に `AResultHUD` を設定済み。
 
-## 表示 + 操作: `AResultHUD`（`GM_Result` の HUDClass に設定済み）
+## 表示 + 操作: `AResultHUD`（仕様書の 図53 / 図43 に合わせる）
 
-- 背景不透明 + 勝敗（`YOU WIN` / `LOSS`）
-- スコア（ランク大文字）/ `TIME MM:SS.ss` / `GUARD 回数`（勝敗どちらでも表示）
-- **敗北時**: はじめ「LOSS」のみ → `LossMenuDelaySeconds`(3s) 後に選択項目（仕様通り）
-- 選択項目: 再挑戦 / タイトルへ / ゲーム終了。上下で移動、
-  - **A / Enter**: 現在の選択で決定（＝仕様「A バトルシーン」）
-  - **B**: タイトルへ（直接）
-  - **X**: ゲーム終了（直接）
-- 決定すると **確認ダイアログ**（はい / いいえ、既定「いいえ」）。左右で選び A で確定
-- 実行: 再挑戦→`RetryLevelName`(`LV_Ingame`) / タイトル→`TitleLevelName`(`LV_Title`) / 終了→`QuitGame`
-- 既存の `WBP_ClearResult` はビューポートから自動的に外す（`bRemoveLegacyResultWidget`）
+- 画面全体にうっすら暗幕（`DimAlpha` 0.4、不透明にしない＝奥のシーンが見える）
+- **WIN**: `VICTORY` 上中央（白）/ 左に「スコア」小ラベル＋**巨大な黄色いランク文字**（S/A/B/C）/
+  中央右に「タイム」＋`MM:SS`（`.cc` は小さめ）/ その下に「ガード成功 N」小
+- **LOSE**: `LOSS` 中央（暗い赤）。はじめ LOSS だけ → `LossInputDelaySeconds`(3s) 後に
+  操作受付＋「タイム / スコア D」小表示
+- 右下（操作受付後）: `A 再挑戦   B タイトルへ   X ゲーム終了`（1 行ヒント。縦メニューは無し）
+- **A / B / X 押下で確認ダイアログ**（「〜しますか？」＋ はい/いいえ、既定いいえ、左右で選択、A 確定 / B 取消）
+- 実行: A→`RetryLevelName`(`LV_Ingame`) / B→`TitleLevelName`(`LV_Title`) / X→`QuitGame`
+- 既存の `WBP_ClearResult` が出ていればビューポートから外す（`bRemoveLegacyResultWidget`）
 
 ## 注意 / 既存 BP との重複
 

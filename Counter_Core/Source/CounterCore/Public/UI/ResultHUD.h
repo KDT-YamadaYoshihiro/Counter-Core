@@ -7,20 +7,21 @@
 class UBattleResultSubsystem;
 
 UENUM()
-enum class EResultMenuItem : uint8
+enum class EResultChoice : uint8
 {
-	Retry,   // 再挑戦 → バトルシーン
-	Title,   // タイトルへ
-	Quit     // ゲーム終了
+	None,
+	Retry,   // A: 再挑戦 → バトルシーン
+	Title,   // B: タイトルへ
+	Quit     // X: ゲーム終了
 };
 
 /**
  * 仕様書「全体フロー / リザルト」の画面（UMG なしのキャンバス描画）。
- * - 勝敗結果 / スコア(ランク S>A>B>C、敗北 D) / タイム / ガード成功回数
- * - 敗北時: はじめ「LOSS」のみ → 3秒後に選択項目
- * - 選択: 再挑戦 / タイトルへ / ゲーム終了（A で決定、B=タイトル・X=終了の直接指定）
- * - 決定でダイアログ（はい / いいえ）を表示
- * GM_Result の HUDClass に設定する。データは UBattleResultSubsystem から読む。
+ * WIN:  "VICTORY" 上中央 / 左に大きな黄色ランク（"スコア"）/ 中央右に "タイム" MM:SS.ss /
+ *       右下に「A 再挑戦   B タイトルへ   X ゲーム終了」
+ * LOSE: "LOSS" 中央（暗赤）。はじめは LOSS だけ → LossMenuDelaySeconds 後に操作受付＋右下ヒント。
+ * A/B/X 押下で確認ダイアログ（はい / いいえ）。
+ * GM_Result の HUDClass に設定。データは UBattleResultSubsystem から読む。
  */
 UCLASS()
 class COUNTERCORE_API AResultHUD : public AHUD
@@ -33,21 +34,25 @@ public:
 	virtual void BeginPlay() override;
 	virtual void DrawHUD() override;
 
-	/** 「再挑戦」で開くレベル。仕様: A = バトルシーン。 */
+	/** A「再挑戦」で開くレベル。仕様: A = バトルシーン。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Result|HUD")
 	FName RetryLevelName = FName("LV_Ingame");
 
-	/** 「タイトルへ」で開くレベル。仕様: B = タイトル。 */
+	/** B「タイトルへ」で開くレベル。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Result|HUD")
 	FName TitleLevelName = FName("LV_Title");
 
-	/** 敗北時、「LOSS」だけ出してから選択項目を出すまでの遅延（秒）。仕様: 3秒。 */
+	/** 敗北時、「LOSS」だけ出してから操作を受け付けるまでの遅延（秒）。仕様: 3秒。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Result|HUD", meta = (ClampMin = "0"))
-	float LossMenuDelaySeconds = 3.f;
+	float LossInputDelaySeconds = 3.f;
 
-	/** 勝利時に選択項目を出すまでの遅延（秒、演出用）。 */
+	/** 勝利時に操作を受け付けるまでの遅延（秒、演出用）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Result|HUD", meta = (ClampMin = "0"))
-	float WinMenuDelaySeconds = 1.f;
+	float WinInputDelaySeconds = 0.8f;
+
+	/** 画面全体の暗幕アルファ（0=透明, 1=不透明）。仕様の画は背景がうっすら見える。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Result|HUD", meta = (ClampMin = "0", ClampMax = "1"))
+	float DimAlpha = 0.4f;
 
 	/** 既存の WBP_ClearResult をビューポートから外す（C++ HUD に一本化）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Result|HUD")
@@ -61,21 +66,17 @@ private:
 	APlayerController* GetPC() const;
 
 	void UpdateState();
-	void HandleMenuInput();
-	void HandleDialogInput();
-	void OpenDialogFor(EResultMenuItem Item);
-	void ExecuteSelected();
+	void HandleInput();
+	void OpenDialog(EResultChoice Choice);
+	void Execute();
 	void SweepLegacyWidget();
 
-	void DrawTextCentered(const FString& Text, float CX, float CY, float Scale, const FLinearColor& Color);
-	void DrawTextLeft(const FString& Text, float X, float CY, float Scale, const FLinearColor& Color);
-	float MenuDelay() const;
+	void DrawStr(const FString& Text, float X, float Y, float Scale, const FLinearColor& Color, bool bCenterX, bool bCenterY);
 
-	bool bMenuVisible = false;
+	bool bInputArmed = false;
 	bool bDialogOpen = false;
-	bool bDialogYes = false;                 // ダイアログの選択（はい/いいえ）
-	EResultMenuItem Selected = EResultMenuItem::Retry;
-	EResultMenuItem DialogItem = EResultMenuItem::Retry;
+	bool bDialogYes = false;
+	EResultChoice DialogChoice = EResultChoice::None;
 	float Elapsed = 0.f;
 	bool bExecuting = false;
 
