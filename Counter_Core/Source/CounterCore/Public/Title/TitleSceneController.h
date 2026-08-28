@@ -55,6 +55,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Title|Camera", meta = (ClampMin = "0.1"))
 	float BobPeriod = 14.f;
 
+	// --- ゲーム終了（☰ / Esc / Start）---
+
+	/** ☰ / Esc / Start で終了確認を出せるようにする。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Title|Quit")
+	bool bAllowQuit = true;
+
+	UFUNCTION(BlueprintPure, Category = "Title|Quit")
+	bool IsQuitPromptOpen() const { return bQuitPromptOpen; }
+
+	UFUNCTION(BlueprintPure, Category = "Title|Quit")
+	bool IsQuitPromptYes() const { return bQuitPromptYes; }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
@@ -62,12 +74,17 @@ protected:
 private:
 	void SetupCamera();
 	void UpdateOrbit(float DeltaSeconds);
+	void PollQuitInput();
+	void SetTitleWidgetHidden(bool bWantHidden);
 	APlayerController* GetPC() const;
 
 	UPROPERTY(Transient) TObjectPtr<ACameraActor> OrbitCam;
+	UPROPERTY(Transient) TObjectPtr<class UUserWidget> CachedTitleWidget;
 
 	FVector PivotWorld = FVector::ZeroVector;
 	float Angle = 0.f;
 	float Elapsed = 0.f;
+	bool bQuitPromptOpen = false;
+	bool bQuitPromptYes = false;
 	FTimerHandle SetupRetryTimer;
 };
