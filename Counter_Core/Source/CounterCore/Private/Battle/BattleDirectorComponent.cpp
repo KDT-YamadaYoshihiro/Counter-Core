@@ -43,7 +43,7 @@ void UBattleDirectorComponent::ResolveRefs()
 		return;
 	}
 
-	if (!PlayerCombat || !PlayerGuard)
+	if (!PlayerCombat || !PlayerGuard || !PlayerAction)
 	{
 		if (APawn* P = UGameplayStatics::GetPlayerPawn(this, 0))
 		{
@@ -54,6 +54,10 @@ void UBattleDirectorComponent::ResolveRefs()
 			if (!PlayerGuard)
 			{
 				PlayerGuard = P->FindComponentByClass<UPlayerGuardComponent>();
+			}
+			if (!PlayerAction)
+			{
+				PlayerAction = P->FindComponentByClass<UPlayerActionComponent>();
 			}
 		}
 	}
@@ -89,20 +93,51 @@ void UBattleDirectorComponent::ResolveRefs()
 		SetActorsFrozen(true);
 	}
 
-	if (!PlayerCombat || !EnemyCombat)
+	if (!PlayerCombat || !PlayerAction || !EnemyCombat)
 	{
-		World->GetTimerManager().SetTimer(ResolveTimer, this, &UBattleDirectorComponent::ResolveRefs, 1.0f, false);
+		World->GetTimerManager().SetTimer(ResolveTimer, this, &UBattleDirectorComponent::ResolveRefs, 0.5f, false);
 	}
 }
 
 void UBattleDirectorComponent::SetActorsFrozen(bool bFrozen)
 {
-	// プレイヤー入力
+	if (bActorsFrozen == bFrozen)
+	{
+		return;
+	}
+	bActorsFrozen = bFrozen;
+
+	// プレイヤー入力（移動・視点 + Enhanced Input の BindAction も含めて止める）
 	if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
 	{
 		PC->SetIgnoreMoveInput(bFrozen);
 		PC->SetIgnoreLookInput(bFrozen);
+		if (APawn* Pawn = PC->GetPawn())
+		{
+			if (bFrozen) { Pawn->DisableInput(PC); }
+			else { Pawn->EnableInput(PC); }
+		}
 	}
+
+	// C++ の攻撃/ガード/回避は PollFallbackInput で生キーを直接見ているため
+	// SetIgnoreMoveInput では止まらない。コンポーネントの Tick を止める。
+	if (PlayerAction)
+	{
+		if (bFrozen)
+		{
+			PlayerAction->CancelAttack();
+		}
+		PlayerAction->SetComponentTickEnabled(!bFrozen);
+	}
+	if (PlayerGuard)
+	{
+		if (bFrozen)
+		{
+			PlayerGuard->StopGuard();
+		}
+		PlayerGuard->SetComponentTickEnabled(!bFrozen);
+	}
+
 	// 敵 AI（Tick を止める）
 	if (EnemyActor)
 	{

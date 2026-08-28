@@ -6,6 +6,7 @@
 
 class UPlayerCombatComponent;
 class UPlayerGuardComponent;
+class UPlayerActionComponent;
 class UMonsterCombatComponent;
 class AHUD;
 
@@ -121,12 +122,14 @@ private:
 
 	EBattleResult Result = EBattleResult::InProgress;
 	bool bIntroActive = false;
+	bool bActorsFrozen = false;
 	float IntroTimer = 0.f;
 	float ElapsedTime = 0.f;
 	int32 GuardSuccessCount = 0;
 
 	UPROPERTY() TObjectPtr<UPlayerCombatComponent> PlayerCombat;
 	UPROPERTY() TObjectPtr<UPlayerGuardComponent> PlayerGuard;
+	UPROPERTY() TObjectPtr<UPlayerActionComponent> PlayerAction;
 	UPROPERTY() TObjectPtr<UMonsterCombatComponent> EnemyCombat;
 	UPROPERTY() TObjectPtr<AActor> EnemyActor;
 
