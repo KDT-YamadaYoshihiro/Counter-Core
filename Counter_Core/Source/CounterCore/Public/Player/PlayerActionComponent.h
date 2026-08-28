@@ -58,9 +58,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack")
 	FName WeaponSocket = FName("hand_r");
 
-	/** 武器が無い場合のフォールバック近接判定ボックスの大きさ。 */
+	/** 近接判定ボックスの半径（extent）。武器の見た目とは独立に、確実に当てるための固定サイズ。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack")
-	FVector MeleeHitboxExtent = FVector(40.f, 40.f, 40.f);
+	FVector MeleeHitboxExtent = FVector(90.f, 75.f, 90.f);
+
+	/** 近接判定ボックスのプレイヤー(root)からの相対位置。前方リーチ。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack")
+	FVector MeleeHitboxOffset = FVector(110.f, 0.f, 0.f);
 
 	/** 既存 BP の近接コンポーネント名。見つかったら常時 NoCollision にして旧処理を止める。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack")
@@ -103,6 +107,10 @@ public:
 	// --- 攻撃ヒットストップ実時間（bHitStop の攻撃で使用）---
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack", meta = (ClampMin = "0"))
 	float HitStopDuration = 0.11f;
+
+	/** コンボ終了後、次の攻撃を始められるまでの間（秒）。連打での即リスタート痙攣防止。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack", meta = (ClampMin = "0"))
+	float PostComboCooldown = 0.15f;
 
 	/** 画面デバッグ表示。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Debug")
@@ -200,6 +208,7 @@ private:
 
 	// 命中
 	void SetMeleeHitboxActive(bool bActive);
+	void SweepMeleeOverlaps();
 	UFUNCTION()
 	void OnMeleeOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp,
 		int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
@@ -226,6 +235,7 @@ private:
 	FName CurrentAttackId = NAME_None;
 	FPlayerAttackRow CurrentAttackRow;
 	float AttackElapsed = 0.f;
+	float ComboCooldownTimer = 0.f;        // コンボ後の再始動待ち
 	bool bMeleeActive = false;
 	bool bComboQueued = false;              // ウィンドウ中に次入力があった
 	EPlayerAttackTier QueuedTier = EPlayerAttackTier::Small;

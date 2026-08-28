@@ -18,7 +18,7 @@ void UPlayerCombatComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	Hp = MaxHp;
-	Gauge = 0;
+	Gauge = FMath::Clamp(InitialGauge, 0, MaxGauge);
 	State = EPlayerCombatState::Normal;
 	OnHpChanged.Broadcast(Hp, MaxHp);
 	OnGaugeChanged.Broadcast(Gauge, MaxGauge);

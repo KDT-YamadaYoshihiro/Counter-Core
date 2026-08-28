@@ -9,7 +9,15 @@
 |---|---|
 | `UPlayerCombatComponent` | HP **100** / 防御 **20** / 状態フラグ（通常/攻撃/被弾/気絶）/ ダメージ = 攻撃力−防御 / 被ダメ後の無敵 `PostHitInvulnTime` / のけぞり `HitReactTime` / **攻撃ゲージ**（最大 **10**・パッシブ `PassiveGaugeInterval` 秒で +1・`AddGaugeFromGuardedDamage`・`TryConsumeGauge`・`ForceGaugeMax`）/ ラッシュ与ダメ **1.2倍**（`SetRushActive`） |
 | `UPlayerGuardComponent` | 盾耐久 **100** / ガード可能時間 **10s**（`MaxGuardTime`、非ガード時回復）/ クールタイム **2s**（使い切り時のみ）/ 盾自然回復 **120/s ≒ 毎F+2**（成功 **1s** 後から）/ 移動ロック（ガード中 `MaxWalkSpeed=0`）/ `HandleGuardedHit`（HP0・盾削り・ゲージ変換・ヒットストップ）/ 盾耐久0 → `Combat->BeginStun(`**10s**`)` |
-| `UPlayerActionComponent` | 攻撃3種（小中大）+ 派生コンボ（`DT_PlayerAttacks` 駆動、小1→小2→小3 / 中1→中2→中3 / 大）/ ゲージ消費（小**1**・中**2**・大**4**枠、始動時）/ 敵へ威力+スタン付与 / 回避ローリング（i-frame `DodgeIFrameStart`〜`End`）/ 優先度ゲート（移動 < ガード < 攻撃 < 回避）/ 被弾で攻撃中断（`bCancelable`、大は不可）/ 近接判定は自前 `UBoxComponent` を `hand_r` に生成 |
+| `UPlayerActionComponent` | 攻撃3種（小中大）+ 派生コンボ（`DT_PlayerAttacks` 駆動、小1→小2→小3 / 中1→中2→中3 / 大）/ ゲージ消費（小**1**・中**2**・大**4**枠、始動時）/ 敵へ威力+スタン付与 / 回避ローリング（i-frame `DodgeIFrameStart`〜`End`）/ 優先度ゲート（移動 < ガード < 攻撃 < 回避）/ 被弾で攻撃中断（`bCancelable`、大は不可）/ 近接判定は自前 `UBoxComponent`（`MeleeHitboxExtent` / `MeleeHitboxOffset` でプレイヤー前方に固定）。武器（`WeaponClass`）は**見た目専用**でシェイプは無効化 |
+
+### 命中しない・連打で痙攣、の対策（`b5edf03` 以降）
+
+- **近接判定を武器 BP に依存させない**: `BP_Weapon` のシェイプは仮アセット依存で位置・サイズが不定なため、判定は必ず自前の固定ボックス（初期値 前方 **110cm**・半径 **90×75×90**）で行う。武器は見た目のみ。
+- **確実なオーバーラップ取得**: 判定 ON 時に `UpdateOverlaps()` → `GetOverlappingActors` を舐め、さらに**アクティブ中は毎フレーム**重なりを拾う（歩いて入ってきた敵も命中）。
+- **連打の痙攣**: コンボ 1 段の `EndTime` より仮モンタージュが長いと毎段で途中リスタート → 再生レートを `EndTime` に合わせて調整。加えてコンボ終了後 `PostComboCooldown`（0.15s）は再始動を無視。
+- **ゲージで最初の攻撃が出ない問題**: 攻撃は開始時にゲージ消費（仕様: 小1/中2/大4）だが、素の入手源はガード成功のみ。テスト用に `InitialGauge`（初期 **3** 枠）と `PassiveGaugeInterval`（**3s** に短縮）を追加。どちらも調整プロパティ。
+- **命中デバッグ**: `bPrintActionEvents` ON で「命中 → 対象 に N ダメージ（残HP）」を画面表示。非敵に重なった場合も出す。
 
 ## 入力
 

@@ -58,32 +58,41 @@ void UPlayerActionComponent::BeginPlay()
 			}
 		}
 
-		USceneComponent* AttachTo = Mesh ? (USceneComponent*)Mesh : Owner->GetRootComponent();
+		USceneComponent* MeshOrRoot = Mesh ? (USceneComponent*)Mesh : Owner->GetRootComponent();
 
-		// 剣を手に生成（敵と同じ BP_Weapon）。
+		// 剣を手に生成（敵と同じ BP_Weapon）。これは「見た目」専用。判定は下の自前ボックスで行う。
 		if (WeaponClass)
 		{
 			WeaponActor = NewObject<UChildActorComponent>(Owner, TEXT("PlayerWeapon"));
-			WeaponActor->SetupAttachment(AttachTo, WeaponSocket);
+			WeaponActor->SetupAttachment(MeshOrRoot, WeaponSocket);
 			WeaponActor->RegisterComponent();
 			WeaponActor->SetChildActorClass(WeaponClass);
 			WeaponActor->CreateChildActor();
 
+			// 武器 BP 側のシェイプが誤爆しないよう黙らせる（判定は使わない）。
 			if (AActor* W = WeaponActor->GetChildActor())
 			{
-				if (UShapeComponent* Shape = W->FindComponentByClass<UShapeComponent>())
+				TArray<UShapeComponent*> WShapes;
+				W->GetComponents<UShapeComponent>(WShapes);
+				for (UShapeComponent* S : WShapes)
 				{
-					MeleeHitbox = Shape;
+					if (S)
+					{
+						S->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+						S->SetGenerateOverlapEvents(false);
+					}
 				}
 			}
 		}
 
-		// 武器が無ければフォールバックの近接判定ボックスを手に生成。
-		if (!MeleeHitbox)
+		// 近接判定ボックスは常に自前で生成し、プレイヤー前方に固定サイズで置く。
+		// （仮アセット / モンタージュに依存せず確実に敵カプセルへ当てるため。）
 		{
+			USceneComponent* AttachRoot = Owner->GetRootComponent();
 			UBoxComponent* Box = NewObject<UBoxComponent>(Owner, TEXT("PlayerMeleeHitbox"));
-			Box->SetupAttachment(AttachTo, WeaponSocket);
+			Box->SetupAttachment(AttachRoot ? AttachRoot : MeshOrRoot);
 			Box->RegisterComponent();
+			Box->SetRelativeLocation(MeleeHitboxOffset);
 			Box->SetBoxExtent(MeleeHitboxExtent);
 			MeleeHitbox = Box;
 		}
@@ -94,6 +103,7 @@ void UPlayerActionComponent::BeginPlay()
 			MeleeHitbox->SetCollisionObjectType(ECC_WorldDynamic);
 			MeleeHitbox->SetCollisionResponseToAllChannels(ECR_Ignore);
 			MeleeHitbox->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+			MeleeHitbox->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap);
 			MeleeHitbox->SetGenerateOverlapEvents(true);
 			// カメラ判定を貫通させる（近接時のスプリングアーム寄り対策）。
 			MeleeHitbox->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
@@ -305,6 +315,10 @@ void UPlayerActionComponent::TryAttack(EPlayerAttackTier Tier)
 		return;
 	}
 
+	if (ComboCooldownTimer > 0.f)
+	{
+		return; // コンボ直後の連打は無視（痙攣防止）
+	}
 	if (!CanStartAction(EPlayerActionType::Attack))
 	{
 		return;
@@ -353,7 +367,13 @@ void UPlayerActionComponent::StartAttackRow(FName AttackId)
 		{
 			if (UAnimInstance* Anim = Mesh->GetAnimInstance())
 			{
-				Anim->Montage_Play(CurrentAttackRow.Montage);
+				// モンタージュがこの攻撃の長さ（EndTime）に収まるよう再生レートを調整。
+				// 仮アセットが EndTime より長いと毎コンボで途中リスタートして痙攣して見えるため。
+				const float MontageLen = CurrentAttackRow.Montage->GetPlayLength();
+				const float Rate = (CurrentAttackRow.EndTime > 0.05f && MontageLen > 0.05f)
+					? FMath::Clamp(MontageLen / CurrentAttackRow.EndTime, 0.2f, 3.f)
+					: 1.f;
+				Anim->Montage_Play(CurrentAttackRow.Montage, Rate);
 			}
 		}
 	}
@@ -396,6 +416,7 @@ void UPlayerActionComponent::FinishAttack()
 	bMeleeActive = false;
 	bComboQueued = false;
 	CurrentAttackId = NAME_None;
+	ComboCooldownTimer = PostComboCooldown; // 連打での即リスタート痙攣を防ぐ
 	SetCurrentAction(EPlayerActionType::None);
 	if (Combat && Combat->GetCombatState() == EPlayerCombatState::Attack)
 	{
@@ -551,17 +572,27 @@ void UPlayerActionComponent::SetMeleeHitboxActive(bool bActive)
 		MeleeHitbox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 		MeleeHitbox->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 		MeleeHitbox->SetHiddenInGame(false);
-		TArray<AActor*> Overlapping;
-		MeleeHitbox->GetOverlappingActors(Overlapping, APawn::StaticClass());
-		for (AActor* Other : Overlapping)
-		{
-			OnMeleeOverlap(MeleeHitbox, Other, nullptr, 0, false, FHitResult());
-		}
+		MeleeHitbox->UpdateOverlaps();
+		SweepMeleeOverlaps();
 	}
 	else
 	{
 		MeleeHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		MeleeHitbox->SetHiddenInGame(true);
+	}
+}
+
+void UPlayerActionComponent::SweepMeleeOverlaps()
+{
+	if (!MeleeHitbox)
+	{
+		return;
+	}
+	TArray<AActor*> Overlapping;
+	MeleeHitbox->GetOverlappingActors(Overlapping);
+	for (AActor* Other : Overlapping)
+	{
+		OnMeleeOverlap(MeleeHitbox, Other, nullptr, 0, false, FHitResult());
 	}
 }
 
@@ -580,12 +611,14 @@ void UPlayerActionComponent::OnMeleeOverlap(UPrimitiveComponent* /*OverlappedCom
 	UMonsterCombatComponent* EnemyCombat = OtherActor->FindComponentByClass<UMonsterCombatComponent>();
 	if (!EnemyCombat)
 	{
+		// 敵以外に重なった場合もデバッグには出す（判定が動いているかの確認用）。
+		PrintAction(FString::Printf(TEXT("近接判定オーバーラップ（非敵）: %s"), *OtherActor->GetName()), FColor::Silver);
 		return;
 	}
 	HitActorsThisSwing.Add(OtherActor);
 
 	// 敵の HandleIncomingHit が「攻撃力 - 防御力」とラッシュ倍率（敵側 bTargetInRush）を処理する。
-	EnemyCombat->HandleIncomingHit(CurrentAttackRow.Power, /*bGuardedByPlayer*/ false);
+	const FMonsterDamageResult DmgResult = EnemyCombat->HandleIncomingHit(CurrentAttackRow.Power, /*bGuardedByPlayer*/ false);
 	if (CurrentAttackRow.StunValue > 0)
 	{
 		EnemyCombat->AddStun(CurrentAttackRow.StunValue);
@@ -596,7 +629,9 @@ void UPlayerActionComponent::OnMeleeOverlap(UPrimitiveComponent* /*OverlappedCom
 		ApplyHitStop(HitStopDuration);
 	}
 	PlayAttackHitShake();
-	PrintAction(FString::Printf(TEXT("命中 %s → 威力%d / スタン+%d"), *CurrentAttackId.ToString(), CurrentAttackRow.Power, CurrentAttackRow.StunValue), FColor::Red);
+	PrintAction(FString::Printf(TEXT("命中 %s → %s に %d ダメージ（残HP %d / %d）"),
+		*CurrentAttackId.ToString(), *OtherActor->GetName(),
+		DmgResult.AppliedDamage, EnemyCombat->Status.Hp, EnemyCombat->Status.MaxHp), FColor::Red);
 }
 
 void UPlayerActionComponent::PlayAttackHitShake() const
@@ -706,10 +741,21 @@ void UPlayerActionComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 
 	PollFallbackInput();
 
+	if (ComboCooldownTimer > 0.f)
+	{
+		ComboCooldownTimer = FMath::Max(0.f, ComboCooldownTimer - DeltaTime);
+	}
+
 	switch (CurrentAction)
 	{
 	case EPlayerActionType::Attack: TickAttack(DeltaTime); break;
 	case EPlayerActionType::Dodge:  TickDodge(DeltaTime); break;
 	default: break;
+	}
+
+	// 判定アクティブ中は毎フレーム重なりを拾う（歩いて入ってきた敵も確実に当てる）。
+	if (bMeleeActive)
+	{
+		SweepMeleeOverlaps();
 	}
 }

@@ -71,7 +71,11 @@ public:
 
 	/** パッシブでゲージが 1 枠増える間隔（秒）。仕様 UI: 「一定時間ごとに1枠獲得」。0 で無効。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Gauge", meta = (ClampMin = "0"))
-	float PassiveGaugeInterval = 6.f;
+	float PassiveGaugeInterval = 3.f;
+
+	/** 戦闘開始時に持っている攻撃ゲージ（枠）。0 だと最初はガード成功でしか攻撃できない。調整用。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Gauge", meta = (ClampMin = "0"))
+	int32 InitialGauge = 3;
 
 	/** ガード成功時、防いだダメージ何ポイントごとに 1 枠へ変換するか。仕様 Battle:「敵ダメージ量に応じて」。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Gauge", meta = (ClampMin = "1"))
