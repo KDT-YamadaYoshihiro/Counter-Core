@@ -17,6 +17,7 @@ class COUNTERCORE_API ATitleHUD : public AHUD
 	GENERATED_BODY()
 
 public:
+	virtual void BeginPlay() override;
 	virtual void DrawHUD() override;
 
 private:

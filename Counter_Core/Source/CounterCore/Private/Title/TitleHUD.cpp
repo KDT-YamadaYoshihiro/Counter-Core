@@ -58,6 +58,16 @@ void ATitleHUD::DrawStr(const FString& Text, float X, float Y, int32 PixelSize, 
 	DrawText(Text, Color, X, Y, GEngine ? GEngine->GetLargeFont() : nullptr, PixelSize / 14.f);
 }
 
+void ATitleHUD::BeginPlay()
+{
+	Super::BeginPlay();
+	UE_LOG(LogTemp, Warning, TEXT("[TitleHUD] BeginPlay"));
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 12.f, FColor::Green, TEXT("[TitleHUD] spawned"));
+	}
+}
+
 void ATitleHUD::DrawHUD()
 {
 	Super::DrawHUD();
@@ -66,6 +76,13 @@ void ATitleHUD::DrawHUD()
 		return;
 	}
 
+#if !UE_BUILD_SHIPPING
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(9911, 0.2f, FColor::Yellow, TEXT("[TitleHUD] DrawHUD"));
+	}
+#endif
+
 	const float VW = Canvas->SizeX;
 	const float VH = Canvas->SizeY;
 	ATitleSceneController* Ctl = GetController();
@@ -73,14 +90,14 @@ void ATitleHUD::DrawHUD()
 
 	// ☰ アイコン（左上）
 	{
-		const float IX = 20.f, IY = 18.f, IW = 34.f, IH = 30.f;
-		DrawRect(FLinearColor(0.f, 0.f, 0.f, bPrompt ? 0.8f : 0.45f), IX, IY, IW, IH);
+		const float IX = 24.f, IY = 22.f, IW = 44.f, IH = 38.f;
+		DrawRect(FLinearColor(0.f, 0.f, 0.f, bPrompt ? 0.85f : 0.6f), IX, IY, IW, IH);
 		for (int32 i = 0; i < 3; ++i)
 		{
-			DrawRect(FLinearColor::White, IX + 7.f, IY + 7.f + i * 8.f, IW - 14.f, 3.f);
+			DrawRect(FLinearColor::White, IX + 9.f, IY + 9.f + i * 10.f, IW - 18.f, 4.f);
 		}
-		DrawStr(TEXT("Esc / Start : ゲーム終了"), IX + IW + 10.f, IY + 4.f,
-			FMath::RoundToInt(VH * 0.022f), FLinearColor(0.85f, 0.85f, 0.9f, 0.9f), false);
+		DrawStr(TEXT("Esc / Start : ゲーム終了"), IX + IW + 12.f, IY + 6.f,
+			FMath::Max(14, FMath::RoundToInt(VH * 0.026f)), FLinearColor(0.9f, 0.9f, 0.95f, 0.95f), false);
 	}
 
 	// 終了確認ダイアログ

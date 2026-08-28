@@ -1,4 +1,5 @@
 #include "Title/TitleSceneController.h"
+#include "Title/TitleHUD.h"
 
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
@@ -63,6 +64,12 @@ void ATitleSceneController::SetupCamera()
 	if (OrbitCam)
 	{
 		PC->SetViewTargetWithBlend(OrbitCam, 0.f);
+	}
+
+	// GM の HUDClass に依存せず、確実に TitleHUD を出す（☰ / 終了ダイアログ描画用）。
+	if (!PC->GetHUD() || !PC->GetHUD()->IsA(ATitleHUD::StaticClass()))
+	{
+		PC->ClientSetHUD(ATitleHUD::StaticClass());
 	}
 }
 
