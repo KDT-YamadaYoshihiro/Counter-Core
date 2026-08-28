@@ -58,6 +58,19 @@
 - `AMonsterCharacterBase::bPrintAIEvents`（既定 true）で「やられ」「スタン」「死亡」も画面/ログに出力。
 - スタン値の蓄積量（プレイヤー攻撃1発ごと）は Player シート管轄。プレイヤー側から `Combat->AddStun(値)` を呼ぶ（弱5/中15/大50）。
 
+### デバッグキー（`bEnableDebugKeys`、既定 true）
+
+プレイ中、プレイヤー0のキーでこの敵のステートを強制発火（`WasInputKeyJustPressed` でポーリング）:
+
+| キー | 動作 |
+|---|---|
+| **U** | スタン（スタン値を上限にして `Stun` へ） |
+| **I** | やられ（`Hitstun` へ） |
+| **O** | 死亡（HP0・`OnDied` 発火して `Dead` へ） |
+
+`DebugTriggerStun` / `DebugTriggerHitstun` / `DebugTriggerDead` は BlueprintCallable なので BP からも呼べる。
+本番では `BP_Enemy` の `bEnableDebugKeys` を false に。
+
 ## `BP_Enemy` の現状（このブランチで実施済み）
 
 - 親クラスを `BP_CharacterBase`（BP）→ `MonsterCharacterBase`（C++）に **reparent 済み**。

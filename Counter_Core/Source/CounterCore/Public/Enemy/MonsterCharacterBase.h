@@ -60,6 +60,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Debug")
 	bool bPrintAIEvents = true;
 
+	/** true でプレイヤー0のキー U=スタン / I=やられ / O=死亡 でこの敵のステートを強制発火。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Debug")
+	bool bEnableDebugKeys = true;
+
 	/** 移動速度（cm/s）。CharacterMovement の MaxWalkSpeed に反映。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|AI", meta = (ClampMin = "0"))
 	float ChaseSpeed = 350.f;
@@ -157,6 +161,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Monster|Combat")
 	void DealDamageToTarget(int32 AttackPower);
 
+	// --- デバッグ発火（キー U / I / O、または BP から直接）---
+
+	UFUNCTION(BlueprintCallable, Category = "Monster|Debug")
+	void DebugTriggerStun();
+
+	UFUNCTION(BlueprintCallable, Category = "Monster|Debug")
+	void DebugTriggerHitstun();
+
+	UFUNCTION(BlueprintCallable, Category = "Monster|Debug")
+	void DebugTriggerDead();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void OnConstruction(const FTransform& Transform) override;
@@ -180,6 +195,7 @@ protected:
 	bool EvaluateComboCondition(const FMonsterComboData& C) const; // 距離・角度・背後
 	bool RollComboProbability(const FMonsterComboData& C) const;
 	void PrintAI(const FString& Msg, const FColor& Color) const;
+	void PollDebugKeys(); // U / I / O
 
 	// 攻撃コンポーネントのイベント
 	UFUNCTION()

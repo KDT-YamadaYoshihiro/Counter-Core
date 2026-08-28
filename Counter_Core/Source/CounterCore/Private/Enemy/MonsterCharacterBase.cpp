@@ -9,6 +9,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "GameFramework/PlayerController.h"
+#include "InputCoreTypes.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimInstance.h"
 #include "Engine/DamageEvents.h"
@@ -285,7 +287,6 @@ void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 			GetMesh()->SetSimulatePhysics(true);
 			GetMesh()->WakeAllRigidBodies();
 		}
-		SetActorTickEnabled(false);
 		if (Attack)
 		{
 			Attack->SetComponentTickEnabled(false);
@@ -607,6 +608,11 @@ void AMonsterCharacterBase::Tick(float Dt)
 {
 	Super::Tick(Dt);
 
+	if (bEnableDebugKeys)
+	{
+		PollDebugKeys();
+	}
+
 	switch (State)
 	{
 	case EMonsterState::Idle:    TickIdle(Dt); break;
@@ -615,6 +621,75 @@ void AMonsterCharacterBase::Tick(float Dt)
 	case EMonsterState::Hitstun: TickHitstun(Dt); break;
 	default: break;
 	}
+}
+
+void AMonsterCharacterBase::PollDebugKeys()
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (!PC)
+	{
+		return;
+	}
+
+#if !UE_BUILD_SHIPPING
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(static_cast<uint64>(GetUniqueID()) + 900000, 0.2f, FColor::White,
+			TEXT("[敵デバッグ] U=スタン  I=やられ  O=死亡"));
+	}
+#endif
+
+	if (PC->WasInputKeyJustPressed(EKeys::U))
+	{
+		DebugTriggerStun();
+	}
+	if (PC->WasInputKeyJustPressed(EKeys::I))
+	{
+		DebugTriggerHitstun();
+	}
+	if (PC->WasInputKeyJustPressed(EKeys::O))
+	{
+		DebugTriggerDead();
+	}
+}
+
+void AMonsterCharacterBase::DebugTriggerStun()
+{
+	if (State == EMonsterState::Dead)
+	{
+		return;
+	}
+	if (Combat)
+	{
+		Combat->Status.Stun = Combat->Status.MaxStun;
+	}
+	PrintAI(TEXT("[DEBUG] スタン発火 (U)"), FColor::Purple);
+	ForceState(EMonsterState::Stun);
+}
+
+void AMonsterCharacterBase::DebugTriggerHitstun()
+{
+	if (State == EMonsterState::Dead)
+	{
+		return;
+	}
+	PrintAI(TEXT("[DEBUG] やられ発火 (I)"), FColor::Orange);
+	ForceState(EMonsterState::Hitstun);
+}
+
+void AMonsterCharacterBase::DebugTriggerDead()
+{
+	if (State == EMonsterState::Dead)
+	{
+		return;
+	}
+	if (Combat)
+	{
+		Combat->Status.Hp = 0;
+		Combat->OnDied.Broadcast();
+	}
+	PrintAI(TEXT("[DEBUG] 死亡発火 (O)"), FColor::Red);
+	ForceState(EMonsterState::Dead);
 }
 
 void AMonsterCharacterBase::TickIdle(float Dt)
