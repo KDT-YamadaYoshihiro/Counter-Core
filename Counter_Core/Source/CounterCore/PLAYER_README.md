@@ -24,9 +24,9 @@
 - 新規: `IA_P_AttackSmall/Medium/Heavy/Guard/Dodge/Heal` + `IMC_PlayerCombat`（`/Game/Project/Input/Player/`）
 - **`IMC_PlayerCombat` のキーマッピングは未設定**。当面は C++ の**フォールバックポーリング**で動く（`bBindFallbackKeys`）:
 
-| アクション | ゲームパッド | キーボード |
+| アクション | ゲームパッド | キーボード / マウス |
 |---|---|---|
-| 小攻撃 | X（FaceButton_Left） | J |
+| 小攻撃 | X（FaceButton_Left） | **左クリック** / J |
 | 中攻撃 | Y（FaceButton_Top） | K |
 | 大攻撃 | RB | L |
 | 回避 | A | Space |
@@ -34,6 +34,11 @@
 | ガード（ホールド）| RT | 右クリック |
 
 移動・視点・ジャンプは既存の `IA_MyMove` / `IA_MyMouseLook` / `IA_MyJump` のまま。
+
+> **旧攻撃の無効化**: 左クリックは元々 `IMC_MyDefault` の `IA_MyAttack` → 親 BP `CharacterAttack`
+> （`MM_Attack_01_Montage` を毎クリック再生 → 連打で痙攣、命中は旧 `RightHand` 頼み）だった。
+> `IMC_MyDefault` から `IA_MyAttack` マッピングを削除し、`IMC_PlayerCombat` で左クリックを
+> `IA_P_AttackSmall` に張り替えて C++ 側へ一本化した（`84e2738`）。
 
 ## 敵側の連携（`MonsterCharacterBase`）
 
