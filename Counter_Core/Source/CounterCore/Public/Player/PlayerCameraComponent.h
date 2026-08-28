@@ -79,6 +79,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Start", meta = (ClampMin = "0"))
 	float StartAimHoldSeconds = 4.f;
 
+	// --- 敗北時のカメラ（敵の正面を見る）---
+
+	/** プレイヤー死亡時、カメラを敵へ向けて敵の正面を見せる。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Defeat")
+	bool bDefeatCam = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Defeat", meta = (ClampMin = "0"))
+	float DefeatCamArmLength = 560.f;
+
+	/** 敗北カメラのピッチ（deg、マイナスで見上げ）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Defeat")
+	float DefeatCamPitch = -6.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Defeat")
+	float DefeatCamHeightOffset = 110.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Defeat", meta = (ClampMin = "0.1"))
+	float DefeatCamInterpSpeed = 3.5f;
+
 	UFUNCTION(BlueprintPure, Category = "Camera|LockOn")
 	bool IsLockedOn() const { return bLockedOn; }
 
@@ -105,10 +124,12 @@ private:
 	AActor* FindNearestEnemy(float& OutDist) const;
 	void SetLocked(bool bNew, AActor* Target);
 	void SnapAimToEnemy();
+	bool TickDefeatCam(float Dt);
 
 	UPROPERTY() TObjectPtr<USpringArmComponent> SpringArm;
 	UPROPERTY() TObjectPtr<UCameraComponent> Camera;
 	UPROPERTY() TObjectPtr<UCharacterMovementComponent> Movement;
+	UPROPERTY() TObjectPtr<class UPlayerCombatComponent> Combat;
 	TWeakObjectPtr<AActor> LockTarget;
 
 	bool bLockedOn = false;

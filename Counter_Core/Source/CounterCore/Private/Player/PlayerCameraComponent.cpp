@@ -1,4 +1,5 @@
 #include "Player/PlayerCameraComponent.h"
+#include "Player/PlayerCombatComponent.h"
 #include "Enemy/MonsterCombatComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -36,6 +37,7 @@ void UPlayerCameraComponent::ResolveRefs()
 	}
 	SpringArm = Owner->FindComponentByClass<USpringArmComponent>();
 	Camera = Owner->FindComponentByClass<UCameraComponent>();
+	Combat = Owner->FindComponentByClass<UPlayerCombatComponent>();
 	if (const ACharacter* Char = Cast<ACharacter>(Owner))
 	{
 		Movement = Char->GetCharacterMovement();
@@ -127,6 +129,39 @@ AActor* UPlayerCameraComponent::FindNearestEnemy(float& OutDist) const
 	return Best;
 }
 
+bool UPlayerCameraComponent::TickDefeatCam(float Dt)
+{
+	AActor* Owner = GetOwner();
+	APlayerController* PC = Owner ? Cast<APlayerController>(Cast<APawn>(Owner)->GetController()) : nullptr;
+	float Dist = 0.f;
+	AActor* Enemy = FindNearestEnemy(Dist);
+	if (!Owner || !PC || !Enemy || !SpringArm)
+	{
+		return false;
+	}
+
+	// 敵をロック解除して素直に敵へカメラを向ける（死んだプレイヤーは回さない）。
+	if (bLockedOn)
+	{
+		SetLocked(false, nullptr);
+	}
+
+	const FVector Pivot = Owner->GetActorLocation() + FVector(0.f, 0.f, DefeatCamHeightOffset);
+	const FVector EnemyFocus = Enemy->GetActorLocation() + FVector(0.f, 0.f, 60.f);
+
+	FRotator Desired = (EnemyFocus - Pivot).Rotation();
+	Desired.Pitch = DefeatCamPitch;
+	Desired.Roll = 0.f;
+	PC->SetControlRotation(FMath::RInterpTo(PC->GetControlRotation(), Desired, Dt, DefeatCamInterpSpeed));
+
+	SpringArm->TargetArmLength = FMath::FInterpTo(SpringArm->TargetArmLength, DefeatCamArmLength, Dt, 3.f);
+	FVector SO = SpringArm->SocketOffset;
+	SO.Z = FMath::FInterpTo(SO.Z, DefeatCamHeightOffset, Dt, 3.f);
+	SpringArm->SocketOffset = SO;
+
+	return true;
+}
+
 void UPlayerCameraComponent::SetLocked(bool bNew, AActor* Target)
 {
 	if (bLockedOn == bNew)
@@ -189,6 +224,15 @@ void UPlayerCameraComponent::TickComponent(float Dt, ELevelTick TickType, FActor
 	}
 
 	TimeSinceBegin += Dt;
+
+	// --- 敗北時: 敵の正面を見せるカメラ ---
+	if (bDefeatCam && Combat && !Combat->IsAlive())
+	{
+		if (TickDefeatCam(Dt))
+		{
+			return;
+		}
+	}
 
 	// --- ロック状態の更新（ヒステリシス）---
 	float Dist = 0.f;

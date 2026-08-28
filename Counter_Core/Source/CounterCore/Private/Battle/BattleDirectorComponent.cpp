@@ -4,6 +4,9 @@
 #include "Player/PlayerGuardComponent.h"
 #include "Player/PlayerActionComponent.h"
 #include "Enemy/MonsterCombatComponent.h"
+#include "Enemy/MonsterAttackComponent.h"
+#include "Enemy/MonsterCharacterBase.h"
+#include "Enemy/MonsterTypes.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/HUD.h"
 #include "GameFramework/Actor.h"
@@ -390,6 +393,27 @@ void UBattleDirectorComponent::EndBattle(EBattleResult NewResult)
 				}
 			}
 		}
+	}
+
+	// 敵を止める（決着後、死んだプレイヤーへ攻撃し続けないように）。
+	if (EnemyActor)
+	{
+		if (UMonsterAttackComponent* EAtk = EnemyActor->FindComponentByClass<UMonsterAttackComponent>())
+		{
+			EAtk->CancelAttack();
+			EAtk->SetComponentTickEnabled(false);
+		}
+		if (AMonsterCharacterBase* Mon = Cast<AMonsterCharacterBase>(EnemyActor))
+		{
+			Mon->SetTarget(nullptr);
+			if (NewResult == EBattleResult::PlayerLose)
+			{
+				// プレイヤー敗北時は待機モーションへ（敵は死なない）。
+				Mon->ForceState(EMonsterState::Idle);
+			}
+		}
+		// AI / 攻撃タイムラインの Tick を止める（待機アニメはメッシュ側で継続）。
+		EnemyActor->SetActorTickEnabled(false);
 	}
 
 	UE_LOG(LogTemp, Log, TEXT("[BattleDirector] 決着: %s"),
