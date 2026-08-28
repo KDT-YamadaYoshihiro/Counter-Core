@@ -13,6 +13,7 @@
 #include "InputCoreTypes.h"
 #include "TimerManager.h"
 #include "Camera/CameraShakeBase.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimInstance.h"
 #include "Engine/DamageEvents.h"
@@ -594,13 +595,18 @@ void AMonsterCharacterBase::EndHitStop()
 
 void AMonsterCharacterBase::PlayCameraShake(TSubclassOf<UCameraShakeBase> ShakeClass) const
 {
-	if (!ShakeClass)
+	if (!ShakeClass || CameraShakeScale <= 0.f)
 	{
 		return;
 	}
-	// 仕様書 Battle「カメラシェイク」: 攻撃ヒット時 / 被弾時に微小振動。
-	UGameplayStatics::PlayWorldCameraShake(GetWorld(), ShakeClass, GetActorLocation(),
-		CameraShakeInnerRadius, CameraShakeOuterRadius);
+	// 仕様書 Battle「カメラシェイク」: 攻撃ヒット時 / 被弾時に微小振動。CameraShakeScale で控えめに。
+	if (APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0))
+	{
+		if (PC->PlayerCameraManager)
+		{
+			PC->PlayerCameraManager->StartCameraShake(ShakeClass, CameraShakeScale);
+		}
+	}
 }
 
 void AMonsterCharacterBase::DealDamageToTarget(int32 AttackPower)

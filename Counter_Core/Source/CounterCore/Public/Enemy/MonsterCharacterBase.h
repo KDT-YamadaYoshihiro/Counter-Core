@@ -103,13 +103,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
 	TSubclassOf<UCameraShakeBase> DamagedCameraShake;
 
-	/** カメラシェイクの最大強度になる距離（cm）。 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX", meta = (ClampMin = "0"))
-	float CameraShakeInnerRadius = 2000.f;
-
-	/** カメラシェイクが届く距離（cm）。 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX", meta = (ClampMin = "0"))
-	float CameraShakeOuterRadius = 10000.f;
+	/** カメラシェイクの強度倍率（1.0 = シェイク BP のそのまま。小さくすると控えめに）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX", meta = (ClampMin = "0", ClampMax = "2"))
+	float CameraShakeScale = 0.25f;
 
 	/** 攻撃判定ボックスの大きさ（武器を使わない場合のフォールバック用）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")

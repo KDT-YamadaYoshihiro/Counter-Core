@@ -63,10 +63,11 @@
 - **ヒットストップ** `bHitStopEnabled`（既定 true）: 敵の攻撃がプレイヤーに当たった / 敵が被弾・やられた ときに
   `CustomTimeDilation` と `GlobalAnimRateScale` を `HitStopTimeScale`（既定 0.02）に落とし、
   `HitStopDuration`（既定 0.09 秒・実時間）後に戻す。
-- **カメラシェイク**: `UGameplayStatics::PlayWorldCameraShake` で `InnerRadius`/`OuterRadius`（2000/10000cm）内のプレイヤーカメラを揺らす。
+- **カメラシェイク**: プレイヤー0の `PlayerCameraManager->StartCameraShake(class, CameraShakeScale)`。
+  `CameraShakeScale`（既定 **0.25** = 控えめ）でシェイク BP の強度を一括スケール。
   - `AttackHitCameraShake` = `BP_CameraShake_Hit_Player`（敵の攻撃がヒット時）
   - `DamagedCameraShake` = `BP_CameraShake_Hit_Enemy`（敵が被弾・やられ時）
-- どちらもプレイヤーと厳密に同期する完全版はプレイヤー側で。
+- 強さは `BP_Enemy` の `CameraShakeScale` で調整（0 で無効）。厳密にプレイヤーと同期する完全版はプレイヤー側で。
 
 ### デバッグキー（`bEnableDebugKeys`、既定 true）
 
