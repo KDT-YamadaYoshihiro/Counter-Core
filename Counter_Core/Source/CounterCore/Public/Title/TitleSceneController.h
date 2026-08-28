@@ -23,25 +23,25 @@ class COUNTERCORE_API ATitleSceneController : public AActor
 public:
 	ATitleSceneController();
 
-	/** 周回半径（cm）。 */
+	/** 周回半径（cm）。ステージを外から見渡す想定で既定は大きめ。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Title|Camera", meta = (ClampMin = "0"))
-	float OrbitRadius = 1700.f;
+	float OrbitRadius = 5500.f;
 
 	/** 周回中心からのカメラ高さ（cm）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Title|Camera")
-	float OrbitHeight = 450.f;
+	float OrbitHeight = 2400.f;
 
 	/** 周回速度（度/秒）。プラスで時計回り。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Title|Camera")
-	float OrbitDegreesPerSecond = 6.f;
+	float OrbitDegreesPerSecond = 5.f;
 
 	/** 注視点を周回中心からどれだけ上に取るか（cm）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Title|Camera")
-	float LookAtHeightOffset = 180.f;
+	float LookAtHeightOffset = 200.f;
 
 	/** カメラ FOV。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Title|Camera", meta = (ClampMin = "5", ClampMax = "170"))
-	float CameraFOV = 78.f;
+	float CameraFOV = 72.f;
 
 	/** 開始角度（度）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Title|Camera")
@@ -49,11 +49,11 @@ public:
 
 	/** ゆっくり上下に揺らす振幅（cm、0 で無効）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Title|Camera", meta = (ClampMin = "0"))
-	float BobAmplitude = 40.f;
+	float BobAmplitude = 150.f;
 
 	/** 上下揺れの周期（秒）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Title|Camera", meta = (ClampMin = "0.1"))
-	float BobPeriod = 8.f;
+	float BobPeriod = 14.f;
 
 protected:
 	virtual void BeginPlay() override;

@@ -30,17 +30,20 @@
 
 `GM_Title` は `default_pawn_class = None`。ポーンは出ず、PC + このカメラだけ。
 
-## 背景モデルの置き方（TODO / 手作業）
+## 背景 = 実ステージを外から周回
 
-`LV_Title` は今 sky/light と `SM_SkySphere` のみ。仕様の「ゲーム内で使う背景モデル」を出すには
-どれか:
+仕様「ゲーム内で使う背景モデル」に合わせ、`LV_Title` に **`LV_Ingame` を常時ロードの
+サブレベル**として追加し、`TitleSceneController` を大きめの半径（既定 5500cm / 高さ
+2400cm）でその外周を回す。
 
-1. **推奨**: `LV_Ingame` を指す **Level Instance** アクターを `LV_Title` に配置し、
-   `TitleSceneController` をその中心へ。`LV_Title` 側の `DirectionalLight` /
-   `SkyLight` / `SkyAtmosphere` / `ExponentialHeightFog` / `VolumetricCloud` は
-   二重になるので削除（`LV_Ingame` 側の照明を使う）。
-2. `LV_Ingame` を常時ロードのサブレベルにする（1 と同じ照明重複の注意）。
-3. 背景用の軽量メッシュを数点だけ `LV_Title` に直接配置。
+**サブレベルが未追加なら**（エディタで手作業、20 秒）:
+1. `LV_Title` を開く → メニュー Window ▸ Levels
+2. Add Existing… ▸ `LV_Ingame` を選択 → 追加した行を右クリック ▸ Change Streaming Method ▸ **Always Loaded**
+3. 明るすぎ / 昼夜がちぐはぐなら `LV_Title` の `DirectionalLight` を無効化（`LV_Ingame` 側の照明を使う）
+4. `TitleSceneController` を戦闘エリアの中心あたりへ移動、Details で `OrbitRadius` /
+   `OrbitHeight` / `LookAtHeightOffset` を画に合わせて調整
 
-> 一度サブレベル追加を自動でやろうとしたが、`BP_Enemy` まで持ち込む・照明重複など
-> 副作用が大きいので、レベルの体裁はレベルデザイン側で確定させる方針にした。
+> `BP_Enemy` も一緒に読み込まれる（アリーナに立つボス）。タイトルの画としては
+> むしろ良いのでそのまま。不要なら `LV_Ingame` 側で対応。
+> ※Python から `add_level_to_world` でも入るが、500+ アクター読み込みで
+> エディタが固まりやすいので手作業推奨。
