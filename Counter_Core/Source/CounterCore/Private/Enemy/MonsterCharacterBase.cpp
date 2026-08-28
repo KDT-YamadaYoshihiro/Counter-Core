@@ -135,6 +135,29 @@ void AMonsterCharacterBase::BeginPlay()
 		Move->MaxWalkSpeed = ChaseSpeed;
 	}
 
+	// 近接時にプレイヤーのスプリングアームが敵に寄って画角が壊れるのを防ぐため、
+	// 敵のコリジョンをカメラ判定（ECC_Camera）から除外する。
+	if (bIgnoreCameraCollision)
+	{
+		if (UPrimitiveComponent* Cap = GetCapsuleComponent())
+		{
+			Cap->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+		}
+		if (USkeletalMeshComponent* M = GetMesh())
+		{
+			M->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+		}
+		if (WeaponActor && WeaponActor->GetChildActor())
+		{
+			TArray<UPrimitiveComponent*> Prims;
+			WeaponActor->GetChildActor()->GetComponents<UPrimitiveComponent>(Prims);
+			for (UPrimitiveComponent* Prim : Prims)
+			{
+				Prim->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+			}
+		}
+	}
+
 	// ターゲット未設定ならプレイヤー0を拾う（1v1 前提）。
 	if (!TargetActor)
 	{

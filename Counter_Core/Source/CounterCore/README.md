@@ -69,6 +69,13 @@
   - `DamagedCameraShake` = `BP_CameraShake_Hit_Enemy`（敵が被弾・やられ時）
 - 強さは `BP_Enemy` の `CameraShakeScale` で調整（0 で無効）。厳密にプレイヤーと同期する完全版はプレイヤー側で。
 
+### カメラ寄り対策
+
+`bIgnoreCameraCollision`（既定 true）: BeginPlay で敵のカプセル / メッシュ / 武器のコリジョンを
+`ECC_Camera` から除外する。近接時にプレイヤーのスプリングアームが敵に当たって
+カメラが敵に寄り、画角が壊れる（近接カリング）のを防ぐ。
+※ プレイヤーのスプリングアームの `ProbeChannel` が `ECC_Camera` 以外の場合は効かない。その場合はプレイヤー側で対応。
+
 ### デバッグキー（`bEnableDebugKeys`、既定 true）
 
 プレイ中、プレイヤー0のキーでこの敵のステートを強制発火（`WasInputKeyJustPressed` でポーリング）:

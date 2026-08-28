@@ -107,6 +107,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX", meta = (ClampMin = "0", ClampMax = "2"))
 	float CameraShakeScale = 0.25f;
 
+	/** true で敵のコリジョンをカメラ判定（ECC_Camera）から除外。近接時にプレイヤーのスプリングアームが敵に寄って画角が壊れるのを防ぐ。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	bool bIgnoreCameraCollision = true;
+
 	/** 攻撃判定ボックスの大きさ（武器を使わない場合のフォールバック用）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
 	FVector HitboxExtent = FVector(60.f, 60.f, 60.f);
