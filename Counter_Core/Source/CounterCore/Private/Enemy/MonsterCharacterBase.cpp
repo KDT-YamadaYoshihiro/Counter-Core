@@ -1,10 +1,13 @@
 #include "Enemy/MonsterCharacterBase.h"
 #include "Enemy/MonsterCombatComponent.h"
 #include "Enemy/MonsterAttackComponent.h"
+#include "Components/BoxComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
-#include "Kismet/KismetSystemLibrary.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/AnimInstance.h"
 #include "Engine/DamageEvents.h"
 
 AMonsterCharacterBase::AMonsterCharacterBase()
@@ -13,6 +16,26 @@ AMonsterCharacterBase::AMonsterCharacterBase()
 
 	Combat = CreateDefaultSubobject<UMonsterCombatComponent>(TEXT("Combat"));
 	Attack = CreateDefaultSubobject<UMonsterAttackComponent>(TEXT("Attack"));
+
+	Hitbox = CreateDefaultSubobject<UBoxComponent>(TEXT("Hitbox"));
+	Hitbox->SetupAttachment(GetMesh());
+	Hitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Hitbox->SetCollisionObjectType(ECC_WorldDynamic);
+	Hitbox->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Hitbox->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+	Hitbox->SetGenerateOverlapEvents(true);
+}
+
+int32 AMonsterCharacterBase::CurrentAttackPower() const
+{
+	// ComboIndex は「次に撃つ攻撃」を指すので、進行中の一発は ComboIndex-1。
+	const int32 Idx = ComboIndex - 1;
+	if (Attack && CurrentComboAttacks.IsValidIndex(Idx))
+	{
+		bool bFound = false;
+		return Attack->GetAttackData(CurrentComboAttacks[Idx], bFound).Damage;
+	}
+	return 0;
 }
 
 void AMonsterCharacterBase::BeginPlay()
@@ -28,6 +51,23 @@ void AMonsterCharacterBase::BeginPlay()
 		Attack->OnAttackFinished.AddDynamic(this, &AMonsterCharacterBase::HandleAttackFinished);
 		Attack->OnToggleHitbox.AddDynamic(this, &AMonsterCharacterBase::HandleToggleHitbox);
 		Attack->OnPlayAttackAnim.AddDynamic(this, &AMonsterCharacterBase::HandlePlayAttackAnim);
+	}
+
+	// 攻撃判定ボックスをセットアップ（ソケット指定があれば付け替え）。
+	if (Hitbox)
+	{
+		Hitbox->SetBoxExtent(HitboxExtent);
+		if (HitboxSocket != NAME_None && GetMesh() && GetMesh()->DoesSocketExist(HitboxSocket))
+		{
+			Hitbox->AttachToComponent(GetMesh(), FAttachmentTransformRules::SnapToTargetIncludingScale, HitboxSocket);
+		}
+		Hitbox->OnComponentBeginOverlap.AddDynamic(this, &AMonsterCharacterBase::OnHitboxOverlap);
+		Hitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+
+	if (UCharacterMovementComponent* Move = GetCharacterMovement())
+	{
+		Move->MaxWalkSpeed = ChaseSpeed;
 	}
 
 	// ターゲット未設定ならプレイヤー0を拾う（1v1 前提）。
@@ -153,7 +193,7 @@ void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 		break;
 	}
 
-	BP_PlayReaction(NewState);
+	PlayReaction(NewState);
 	OnStateChanged.Broadcast(Old, NewState);
 }
 
@@ -240,20 +280,95 @@ void AMonsterCharacterBase::HandleCombatStateRequest(EMonsterState Requested)
 
 void AMonsterCharacterBase::HandleToggleHitbox(bool bEnable)
 {
-	BP_SetHitboxActive(bEnable);
+	if (!Hitbox)
+	{
+		return;
+	}
+	if (bEnable)
+	{
+		HitActorsThisSwing.Reset();
+		Hitbox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		// 判定ONの瞬間に既に重なっている相手も拾う。
+		TArray<AActor*> Overlapping;
+		Hitbox->GetOverlappingActors(Overlapping, APawn::StaticClass());
+		for (AActor* Other : Overlapping)
+		{
+			OnHitboxOverlap(Hitbox, Other, nullptr, 0, false, FHitResult());
+		}
+	}
+	else
+	{
+		Hitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		HitActorsThisSwing.Reset();
+	}
 }
 
 void AMonsterCharacterBase::HandlePlayAttackAnim(FName AttackId)
 {
-	BP_PlayAttackMontage(AttackId);
+	PlayAttackMontage(AttackId);
+}
+
+void AMonsterCharacterBase::OnHitboxOverlap(UPrimitiveComponent* /*OverlappedComp*/, AActor* OtherActor,
+	UPrimitiveComponent* /*OtherComp*/, int32 /*OtherBodyIndex*/, bool /*bFromSweep*/, const FHitResult& /*SweepResult*/)
+{
+	if (!OtherActor || OtherActor == this)
+	{
+		return;
+	}
+	// 攻撃対象（プレイヤー）のみ、1スイング1ヒット。
+	if (TargetActor && OtherActor != TargetActor)
+	{
+		return;
+	}
+	if (HitActorsThisSwing.Contains(OtherActor))
+	{
+		return;
+	}
+	HitActorsThisSwing.Add(OtherActor);
+
+	const int32 Power = CurrentAttackPower();
+	if (Power > 0)
+	{
+		UGameplayStatics::ApplyDamage(OtherActor, static_cast<float>(Power), GetController(), this,
+			UDamageType::StaticClass());
+	}
 }
 
 void AMonsterCharacterBase::DealDamageToTarget(int32 AttackPower)
 {
-	if (TargetActor && AttackPower > 0)
+	const int32 Power = AttackPower > 0 ? AttackPower : CurrentAttackPower();
+	if (TargetActor && Power > 0)
 	{
-		UGameplayStatics::ApplyDamage(TargetActor, static_cast<float>(AttackPower), GetController(), this,
+		UGameplayStatics::ApplyDamage(TargetActor, static_cast<float>(Power), GetController(), this,
 			UDamageType::StaticClass());
+	}
+}
+
+void AMonsterCharacterBase::PlayAttackMontage_Implementation(FName AttackId)
+{
+	if (TObjectPtr<UAnimMontage>* Found = AttackMontages.Find(AttackId))
+	{
+		if (UAnimInstance* Anim = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+		{
+			if (*Found)
+			{
+				Anim->Montage_Play(*Found);
+			}
+		}
+	}
+}
+
+void AMonsterCharacterBase::PlayReaction_Implementation(EMonsterState NewState)
+{
+	if (TObjectPtr<UAnimMontage>* Found = ReactionMontages.Find(NewState))
+	{
+		if (UAnimInstance* Anim = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+		{
+			if (*Found)
+			{
+				Anim->Montage_Play(*Found);
+			}
+		}
 	}
 }
 

@@ -7,6 +7,9 @@
 
 class UMonsterCombatComponent;
 class UMonsterAttackComponent;
+class UBoxComponent;
+class UAnimMontage;
+class UPrimitiveComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FMonsterStateChanged, EMonsterState, OldState, EMonsterState, NewState);
 
@@ -42,6 +45,28 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|AI")
 	TArray<FName> ActionLoop;
 
+	/** 移動速度（cm/s）。CharacterMovement の MaxWalkSpeed に反映。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|AI", meta = (ClampMin = "0"))
+	float ChaseSpeed = 350.f;
+
+	// --- 代用アニメ（未設定でもロジックは動く）---
+
+	/** 攻撃 ID → 再生するモンタージュ。未設定なら再生しないだけ。代用: Mannequin の攻撃アニメを割り当て。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	TMap<FName, TObjectPtr<UAnimMontage>> AttackMontages;
+
+	/** 状態 → リアクション用モンタージュ（やられ/スタン/死亡）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	TMap<EMonsterState, TObjectPtr<UAnimMontage>> ReactionMontages;
+
+	/** 攻撃判定ボックスの大きさ（未設定の既定）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	FVector HitboxExtent = FVector(60.f, 60.f, 60.f);
+
+	/** 攻撃判定ボックスをアタッチするソケット（空ならメッシュ原点）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	FName HitboxSocket = NAME_None;
+
 	// --- コンポーネント ---
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Monster")
@@ -49,6 +74,10 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Monster")
 	TObjectPtr<UMonsterAttackComponent> Attack;
+
+	/** 攻撃判定ボックス。HitActive 中だけ Overlap 有効。 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Monster")
+	TObjectPtr<UBoxComponent> Hitbox;
 
 	// --- ステート ---
 
@@ -81,20 +110,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Monster")
 	float GetSignedAngleToTargetDeg() const;
 
-	// --- BP フック（見た目）---
+	// --- 見た目フック（C++ 既定あり。BP で override 可能）---
 
-	/** アニメモンタージュ再生。代用: BP で適当なモンタージュを鳴らす。 */
-	UFUNCTION(BlueprintImplementableEvent, Category = "Monster|FX")
-	void BP_PlayAttackMontage(FName AttackId);
+	/** アニメモンタージュ再生。既定: AttackMontages[AttackId] を再生。 */
+	UFUNCTION(BlueprintNativeEvent, Category = "Monster|FX")
+	void PlayAttackMontage(FName AttackId);
+	virtual void PlayAttackMontage_Implementation(FName AttackId);
 
-	UFUNCTION(BlueprintImplementableEvent, Category = "Monster|FX")
-	void BP_PlayReaction(EMonsterState NewState);
+	/** リアクション再生。既定: ReactionMontages[NewState] を再生。 */
+	UFUNCTION(BlueprintNativeEvent, Category = "Monster|FX")
+	void PlayReaction(EMonsterState NewState);
+	virtual void PlayReaction_Implementation(EMonsterState NewState);
 
-	/** 攻撃判定コリジョンの ON/OFF。代用: BP で簡易ボックスをトグル。 */
-	UFUNCTION(BlueprintImplementableEvent, Category = "Monster|FX")
-	void BP_SetHitboxActive(bool bActive);
-
-	/** プレイヤーへダメージを与えるフック（攻撃がヒットした瞬間、BP から呼ぶ or C++ で ApplyDamage）。 */
+	/** プレイヤーへダメージを与える。既定: 現在の攻撃 Damage で ApplyDamage。 */
 	UFUNCTION(BlueprintCallable, Category = "Monster|Combat")
 	void DealDamageToTarget(int32 AttackPower);
 
@@ -121,9 +149,14 @@ protected:
 	UFUNCTION()
 	void HandlePlayAttackAnim(FName AttackId);
 
+	UFUNCTION()
+	void OnHitboxOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp,
+		int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+
 private:
 	static int32 StatePriority(EMonsterState S);
 	void AdvanceCombo();
+	int32 CurrentAttackPower() const;
 
 	UPROPERTY()
 	TObjectPtr<AActor> TargetActor;
@@ -138,4 +171,8 @@ private:
 	// Hitstun
 	float HitstunTimer = 0.f;
 	FVector HitstunKnockbackDir = FVector::ZeroVector;
+
+	// この攻撃で既にヒットさせた相手（多段ヒット防止、判定ONごとにクリア）
+	UPROPERTY()
+	TSet<TObjectPtr<AActor>> HitActorsThisSwing;
 };
