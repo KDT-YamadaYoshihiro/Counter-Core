@@ -3,6 +3,7 @@
 #include "Kismet/KismetMathLibrary.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
+#include "Engine/Engine.h"
 
 UMonsterAttackComponent::UMonsterAttackComponent()
 {
@@ -104,18 +105,40 @@ void UMonsterAttackComponent::StartAttack(FName AttackId)
 	ElapsedTime = 0.f;
 	bHitboxOn = false;
 	SetComponentTickEnabled(true);
+	PrintAttackEvent(TEXT("攻撃開始"), FColor::Cyan);
 	SetPhase(EMonsterAttackPhase::Anticipation);
 }
 
 void UMonsterAttackComponent::CancelAttack()
 {
+	const bool bWasActive = CurrentPhase != EMonsterAttackPhase::None && CurrentPhase != EMonsterAttackPhase::Finished;
 	if (bHitboxOn)
 	{
 		bHitboxOn = false;
 		OnToggleHitbox.Broadcast(false);
 	}
+	if (bWasActive)
+	{
+		PrintAttackEvent(TEXT("攻撃中断"), FColor::Yellow);
+	}
 	SetPhase(EMonsterAttackPhase::Finished);
 	CurrentPhase = EMonsterAttackPhase::None;
+}
+
+void UMonsterAttackComponent::PrintAttackEvent(const TCHAR* Label, const FColor& Color) const
+{
+	if (!bPrintAttackEvents)
+	{
+		return;
+	}
+	const FString Msg = FString::Printf(TEXT("%s : %s  (t=%.2f)"), *ActiveData.AttackId.ToString(), Label, ElapsedTime);
+	UE_LOG(LogTemp, Log, TEXT("[MonsterAttack] %s"), *Msg);
+#if !UE_BUILD_SHIPPING
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, AttackEventPrintDuration, Color, Msg);
+	}
+#endif
 }
 
 void UMonsterAttackComponent::SetPhase(EMonsterAttackPhase NewPhase)
@@ -191,6 +214,7 @@ void UMonsterAttackComponent::TickComponent(float DeltaTime, ELevelTick TickType
 	}
 	else
 	{
+		PrintAttackEvent(TEXT("攻撃終了"), FColor::Green);
 		SetPhase(EMonsterAttackPhase::Finished);
 		CurrentPhase = EMonsterAttackPhase::None;
 		OnAttackFinished.Broadcast();
@@ -204,6 +228,8 @@ void UMonsterAttackComponent::TickComponent(float DeltaTime, ELevelTick TickType
 	{
 		bHitboxOn = bShouldHit;
 		OnToggleHitbox.Broadcast(bHitboxOn);
+		PrintAttackEvent(bHitboxOn ? TEXT("判定ON") : TEXT("判定OFF"),
+			bHitboxOn ? FColor::Red : FColor(255, 140, 0));
 	}
 }
 

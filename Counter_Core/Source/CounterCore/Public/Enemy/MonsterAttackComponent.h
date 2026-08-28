@@ -56,6 +56,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Debug")
 	bool bDrawDebug = true;
 
+	/** true で攻撃の開始 / 判定ON / 判定OFF / 終了を画面に Print String 表示する。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Debug")
+	bool bPrintAttackEvents = true;
+
+	/** Print String の表示秒数。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Debug", meta = (ClampMin = "0.5"))
+	float AttackEventPrintDuration = 4.f;
+
 	// --- クエリ ---
 
 	/**
@@ -122,6 +130,7 @@ private:
 	void SetPhase(EMonsterAttackPhase NewPhase);
 	void RotateTowardTarget(float DeltaTime, float RateDegPerSec);
 	void DrawDebugVisualization() const;
+	void PrintAttackEvent(const TCHAR* Label, const FColor& Color) const;
 
 	UPROPERTY()
 	TObjectPtr<AActor> TargetActor;

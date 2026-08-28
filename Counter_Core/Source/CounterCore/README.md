@@ -25,6 +25,9 @@
   - 各コンボの発動条件（最大距離リング + 角度ウェッジ、条件成立で緑／不成立で灰、背後条件は後方ウェッジ）
   - 進行中の攻撃の接触距離・接触角度、フェーズ名（予兆／発生前／判定／硬直）、経過秒、ダメージ
   を常時描画する。
+- `UMonsterAttackComponent::bPrintAttackEvents`（既定 true）: 攻撃の
+  **開始 →（判定ON → 判定OFF）→ 終了 / 中断** を画面左上に Print String 表示（`AttackId : ラベル (t=経過秒)`）。
+  表示秒数は `AttackEventPrintDuration`（既定 4 秒）。同内容は `LogTemp` にも出力。
 
 ## `BP_Enemy` の現状（このブランチで実施済み）
 
