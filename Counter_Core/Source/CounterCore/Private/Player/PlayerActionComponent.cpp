@@ -208,6 +208,8 @@ void UPlayerActionComponent::PollFallbackInput()
 
 	auto Pressed = [PC](FKey A, FKey B) { return PC->WasInputKeyJustPressed(A) || PC->WasInputKeyJustPressed(B); };
 
+	// 左クリックは小攻撃（旧 BP の IA_MyAttack は IMC から外し、こちらに一本化する）。
+	if (PC->WasInputKeyJustPressed(EKeys::LeftMouseButton)) { TryAttack(EPlayerAttackTier::Small); }
 	if (Pressed(EKeys::Gamepad_FaceButton_Left, EKeys::J))   { TryAttack(EPlayerAttackTier::Small); }
 	if (Pressed(EKeys::Gamepad_FaceButton_Top, EKeys::K))    { TryAttack(EPlayerAttackTier::Medium); }
 	if (Pressed(EKeys::Gamepad_RightShoulder, EKeys::L))     { TryAttack(EPlayerAttackTier::Heavy); }
