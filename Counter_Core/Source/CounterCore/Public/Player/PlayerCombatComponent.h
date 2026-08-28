@@ -5,6 +5,9 @@
 #include "Player/PlayerTypes.h"
 #include "PlayerCombatComponent.generated.h"
 
+class UAnimMontage;
+class UCameraShakeBase;
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPlayerDamaged, const FPlayerDamageResult&, Result);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPlayerHpChanged, int32, Hp, int32, MaxHp);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPlayerGaugeChanged, int32, Gauge, int32, MaxGauge);
@@ -41,6 +44,24 @@ public:
 	/** 被弾（のけぞり）で行動不能になる時間（秒）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Status", meta = (ClampMin = "0"))
 	float HitReactTime = 0.4f;
+
+	/** 被弾モーション（仕様: やられ / 被弾モーション）。代用: MM_HitReact_Front_Med_01_Montage。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|FX")
+	TObjectPtr<UAnimMontage> HitReactMontage;
+
+	/** 死亡（敗北）モーション。代用: MM_Death_Front_01_Montage。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|FX")
+	TObjectPtr<UAnimMontage> DeathMontage;
+
+	/** 気絶モーション。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|FX")
+	TObjectPtr<UAnimMontage> StunMontage;
+
+	/** 被弾時のカメラシェイク。代用: BP_CameraShake_Hit_Player。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|FX")
+	TSubclassOf<UCameraShakeBase> DamagedCameraShake;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|FX", meta = (ClampMin = "0", ClampMax = "2"))
+	float CameraShakeScale = 0.3f;
 
 	// --- 攻撃ゲージ（仕様書 Player「攻撃」/ UI「攻撃ゲージ」）---
 
@@ -159,6 +180,8 @@ private:
 	void SetGauge(int32 NewGauge);
 	void EndStun();
 	void EndHitReact();
+	void PlayMontage(UAnimMontage* Montage) const;
+	void PlayDamagedShake() const;
 
 	EPlayerCombatState State = EPlayerCombatState::Normal;
 

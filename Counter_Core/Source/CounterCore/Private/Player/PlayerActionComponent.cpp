@@ -9,7 +9,11 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/BoxComponent.h"
+#include "Components/ShapeComponent.h"
+#include "Components/ChildActorComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Camera/CameraShakeBase.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "EnhancedInputComponent.h"
@@ -54,18 +58,45 @@ void UPlayerActionComponent::BeginPlay()
 			}
 		}
 
-		// 自前の近接判定ボックスを手に生成。
-		MeleeHitbox = NewObject<UBoxComponent>(Owner, TEXT("PlayerMeleeHitbox"));
+		USceneComponent* AttachTo = Mesh ? (USceneComponent*)Mesh : Owner->GetRootComponent();
+
+		// 剣を手に生成（敵と同じ BP_Weapon）。
+		if (WeaponClass)
+		{
+			WeaponActor = NewObject<UChildActorComponent>(Owner, TEXT("PlayerWeapon"));
+			WeaponActor->SetupAttachment(AttachTo, WeaponSocket);
+			WeaponActor->RegisterComponent();
+			WeaponActor->SetChildActorClass(WeaponClass);
+			WeaponActor->CreateChildActor();
+
+			if (AActor* W = WeaponActor->GetChildActor())
+			{
+				if (UShapeComponent* Shape = W->FindComponentByClass<UShapeComponent>())
+				{
+					MeleeHitbox = Shape;
+				}
+			}
+		}
+
+		// 武器が無ければフォールバックの近接判定ボックスを手に生成。
+		if (!MeleeHitbox)
+		{
+			UBoxComponent* Box = NewObject<UBoxComponent>(Owner, TEXT("PlayerMeleeHitbox"));
+			Box->SetupAttachment(AttachTo, WeaponSocket);
+			Box->RegisterComponent();
+			Box->SetBoxExtent(MeleeHitboxExtent);
+			MeleeHitbox = Box;
+		}
+
 		if (MeleeHitbox)
 		{
-			MeleeHitbox->SetupAttachment(Mesh ? (USceneComponent*)Mesh : Owner->GetRootComponent(), MeleeSocket);
-			MeleeHitbox->RegisterComponent();
-			MeleeHitbox->SetBoxExtent(MeleeHitboxExtent);
 			MeleeHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			MeleeHitbox->SetCollisionObjectType(ECC_WorldDynamic);
 			MeleeHitbox->SetCollisionResponseToAllChannels(ECR_Ignore);
 			MeleeHitbox->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 			MeleeHitbox->SetGenerateOverlapEvents(true);
+			// カメラ判定を貫通させる（近接時のスプリングアーム寄り対策）。
+			MeleeHitbox->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 			MeleeHitbox->OnComponentBeginOverlap.AddDynamic(this, &UPlayerActionComponent::OnMeleeOverlap);
 		}
 	}
@@ -519,6 +550,7 @@ void UPlayerActionComponent::SetMeleeHitboxActive(bool bActive)
 		HitActorsThisSwing.Reset();
 		MeleeHitbox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 		MeleeHitbox->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+		MeleeHitbox->SetHiddenInGame(false);
 		TArray<AActor*> Overlapping;
 		MeleeHitbox->GetOverlappingActors(Overlapping, APawn::StaticClass());
 		for (AActor* Other : Overlapping)
@@ -529,6 +561,7 @@ void UPlayerActionComponent::SetMeleeHitboxActive(bool bActive)
 	else
 	{
 		MeleeHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MeleeHitbox->SetHiddenInGame(true);
 	}
 }
 
@@ -562,7 +595,26 @@ void UPlayerActionComponent::OnMeleeOverlap(UPrimitiveComponent* /*OverlappedCom
 	{
 		ApplyHitStop(HitStopDuration);
 	}
+	PlayAttackHitShake();
 	PrintAction(FString::Printf(TEXT("命中 %s → 威力%d / スタン+%d"), *CurrentAttackId.ToString(), CurrentAttackRow.Power, CurrentAttackRow.StunValue), FColor::Red);
+}
+
+void UPlayerActionComponent::PlayAttackHitShake() const
+{
+	if (!AttackHitCameraShake || CameraShakeScale <= 0.f)
+	{
+		return;
+	}
+	if (APawn* Pawn = Cast<APawn>(GetOwner()))
+	{
+		if (APlayerController* PC = Cast<APlayerController>(Pawn->GetController()))
+		{
+			if (PC->PlayerCameraManager)
+			{
+				PC->PlayerCameraManager->StartCameraShake(AttackHitCameraShake, CameraShakeScale);
+			}
+		}
+	}
 }
 
 void UPlayerActionComponent::ApplyHitStop(float Duration)

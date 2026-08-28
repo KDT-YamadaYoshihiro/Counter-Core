@@ -11,6 +11,9 @@ class UInputAction;
 class UInputMappingContext;
 class UPrimitiveComponent;
 class UAnimMontage;
+class UChildActorComponent;
+class UShapeComponent;
+class UCameraShakeBase;
 struct FInputActionValue;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPlayerActionChanged, EPlayerActionType, NewAction);
@@ -47,17 +50,27 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack")
 	FName HeavyStartId = FName("Heavy");
 
-	/** 近接判定ボックスをアタッチするメッシュのソケット / ボーン名。 */
+	/** 手に持たせる武器アクター（敵と同じ BP_Weapon）。設定すると武器内の判定シェイプを攻撃判定に使う。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack")
-	FName MeleeSocket = FName("hand_r");
+	TSubclassOf<AActor> WeaponClass;
 
-	/** 近接判定ボックスの大きさ。 */
+	/** 武器 / 近接判定ボックスをアタッチするメッシュのソケット / ボーン名。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack")
+	FName WeaponSocket = FName("hand_r");
+
+	/** 武器が無い場合のフォールバック近接判定ボックスの大きさ。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack")
 	FVector MeleeHitboxExtent = FVector(40.f, 40.f, 40.f);
 
 	/** 既存 BP の近接コンポーネント名。見つかったら常時 NoCollision にして旧処理を止める。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack")
 	FName LegacyMeleeComponentName = FName("RightHand");
+
+	/** 攻撃がヒットしたときのカメラシェイク。代用: BP_CameraShake_Hit_Enemy。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack")
+	TSubclassOf<UCameraShakeBase> AttackHitCameraShake;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack", meta = (ClampMin = "0", ClampMax = "2"))
+	float CameraShakeScale = 0.25f;
 
 	// --- 回避（仕様: ローリング / 無敵時間あり）---
 
@@ -197,9 +210,12 @@ private:
 	UPlayerCombatComponent* GetCombat() const;
 	UPlayerGuardComponent* GetGuard() const;
 
+	void PlayAttackHitShake() const;
+
 	UPROPERTY() TObjectPtr<UPlayerCombatComponent> Combat;
 	UPROPERTY() TObjectPtr<UPlayerGuardComponent> Guard;
-	UPROPERTY() TObjectPtr<class UBoxComponent> MeleeHitbox;
+	UPROPERTY() TObjectPtr<UChildActorComponent> WeaponActor;
+	UPROPERTY() TObjectPtr<UPrimitiveComponent> MeleeHitbox;
 
 	UFUNCTION()
 	void HandleCombatStateChanged(EPlayerCombatState OldState, EPlayerCombatState NewState);

@@ -112,6 +112,35 @@ void ACounterCoreHUD::DrawHUD()
 	const float Dt = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.f;
 
 	APawn* Player = UGameplayStatics::GetPlayerPawn(this, 0);
+	UBattleDirectorComponent* BD = Player ? Player->FindComponentByClass<UBattleDirectorComponent>() : nullptr;
+
+	// ---- バトルタイム: 画面左上、.00 秒単位 ----
+	if (BD)
+	{
+		const float T = BD->GetElapsedTime();
+		const int32 Min = FMath::FloorToInt(T / 60.f);
+		const float Sec = T - Min * 60.f;
+		DrawLabel(FString::Printf(TEXT("TIME  %02d:%05.2f"), Min, Sec), 28.f, 24.f, FLinearColor::White, 1.1f);
+	}
+
+	// ---- ラッシュ中の画面ティント ----
+	if (Player)
+	{
+		if (UPlayerCombatComponent* RPC = Player->FindComponentByClass<UPlayerCombatComponent>())
+		{
+			if (RPC->bRushActive)
+			{
+				DrawRect(FLinearColor(1.f, 0.45f, 0.05f, 0.10f), 0.f, 0.f, VW, VH);
+				DrawLabel(TEXT("R U S H"), (VW * 0.5f) - 70.f, 90.f, FLinearColor(1.f, 0.7f, 0.2f), 2.0f);
+			}
+		}
+	}
+
+	// ---- 開始演出 ----
+	if (BD && BD->IsIntroPlaying())
+	{
+		DrawLabel(TEXT("READY..."), (VW * 0.5f) - 90.f, VH * 0.35f, FLinearColor(1.f, 1.f, 1.f), 2.6f);
+	}
 
 	// ---- 敵（ボス）HP: 緑バー + 遅延赤バー、画面上部中央 ----
 	if (bShowEnemyHp)
@@ -239,7 +268,7 @@ void ACounterCoreHUD::DrawHUD()
 	}
 
 	// ---- 決着表示 ----
-	if (UBattleDirectorComponent* BD = Player->FindComponentByClass<UBattleDirectorComponent>())
+	if (BD)
 	{
 		const EBattleResult R = BD->GetResult();
 		if (R == EBattleResult::PlayerWin)

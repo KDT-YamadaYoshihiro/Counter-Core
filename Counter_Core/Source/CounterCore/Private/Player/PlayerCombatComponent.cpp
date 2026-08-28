@@ -1,5 +1,13 @@
 #include "Player/PlayerCombatComponent.h"
 #include "TimerManager.h"
+#include "GameFramework/Actor.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Camera/CameraShakeBase.h"
+#include "Camera/PlayerCameraManager.h"
 
 UPlayerCombatComponent::UPlayerCombatComponent()
 {
@@ -93,13 +101,16 @@ FPlayerDamageResult UPlayerCombatComponent::TakeIncomingHit(int32 AttackPower, b
 	InvulnTimer = FMath::Max(InvulnTimer, PostHitInvulnTime);
 	HitReactTimer = HitReactTime;
 	SetCombatState(EPlayerCombatState::Hit);
+	PlayMontage(HitReactMontage);
+	PlayDamagedShake();
 
 	OnDamaged.Broadcast(Result);
 
 	if (Hp <= 0)
 	{
 		Result.bWasLethal = true;
-		OnDied.Broadcast(); // 敗北判定は GM 側
+		PlayMontage(DeathMontage);
+		OnDied.Broadcast(); // 敗北判定は GM / BattleDirector 側
 	}
 	return Result;
 }
@@ -136,7 +147,41 @@ void UPlayerCombatComponent::BeginStun(float Duration)
 	}
 	StunTimer = FMath::Max(0.01f, Duration);
 	SetCombatState(EPlayerCombatState::Stun);
+	PlayMontage(StunMontage);
 	OnStunned.Broadcast();
+}
+
+void UPlayerCombatComponent::PlayMontage(UAnimMontage* Montage) const
+{
+	if (!Montage || !GetOwner())
+	{
+		return;
+	}
+	if (USkeletalMeshComponent* Mesh = GetOwner()->FindComponentByClass<USkeletalMeshComponent>())
+	{
+		if (UAnimInstance* Anim = Mesh->GetAnimInstance())
+		{
+			Anim->Montage_Play(Montage);
+		}
+	}
+}
+
+void UPlayerCombatComponent::PlayDamagedShake() const
+{
+	if (!DamagedCameraShake || CameraShakeScale <= 0.f)
+	{
+		return;
+	}
+	if (APawn* Pawn = Cast<APawn>(GetOwner()))
+	{
+		if (APlayerController* PC = Cast<APlayerController>(Pawn->GetController()))
+		{
+			if (PC->PlayerCameraManager)
+			{
+				PC->PlayerCameraManager->StartCameraShake(DamagedCameraShake, CameraShakeScale);
+			}
+		}
+	}
 }
 
 void UPlayerCombatComponent::EndStun()
