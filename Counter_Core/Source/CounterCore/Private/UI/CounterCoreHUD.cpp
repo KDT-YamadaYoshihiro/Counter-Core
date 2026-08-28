@@ -2,11 +2,58 @@
 #include "Player/PlayerCombatComponent.h"
 #include "Player/PlayerGuardComponent.h"
 #include "Enemy/MonsterCombatComponent.h"
+#include "Battle/BattleDirectorComponent.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 #include "EngineUtils.h"
+#include "Blueprint/UserWidget.h"
+#include "TimerManager.h"
+
+void ACounterCoreHUD::BeginPlay()
+{
+	Super::BeginPlay();
+	if (bRemoveLegacyWidgets)
+	{
+		// プレイヤーの BeginPlay で AddToViewport される旧 UI を、少し遅れて数回スイープして外す。
+		LegacySweepsLeft = 6;
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(LegacySweepTimer, this, &ACounterCoreHUD::SweepLegacyWidgets, 0.5f, true);
+		}
+	}
+}
+
+void ACounterCoreHUD::SweepLegacyWidgets()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	for (TObjectIterator<UUserWidget> It; It; ++It)
+	{
+		UUserWidget* W = *It;
+		if (!W || W->GetWorld() != World || !W->IsInViewport())
+		{
+			continue;
+		}
+		const FString ClassName = W->GetClass()->GetName();
+		for (const FString& Needle : LegacyWidgetNameContains)
+		{
+			if (!Needle.IsEmpty() && ClassName.Contains(Needle))
+			{
+				W->RemoveFromParent();
+				break;
+			}
+		}
+	}
+	if (--LegacySweepsLeft <= 0)
+	{
+		World->GetTimerManager().ClearTimer(LegacySweepTimer);
+	}
+}
 
 AActor* ACounterCoreHUD::FindEnemy() const
 {
@@ -109,6 +156,23 @@ void ACounterCoreHUD::DrawHUD()
 	UPlayerCombatComponent* PC = Player->FindComponentByClass<UPlayerCombatComponent>();
 	UPlayerGuardComponent* PG = Player->FindComponentByClass<UPlayerGuardComponent>();
 
+	// ---- プレイヤー HP: 緑バー + 遅延赤バー、画面下中央 ----
+	if (bShowPlayerHp && PC)
+	{
+		const float Frac = PC->GetHpNormalized();
+		if (PlayerHpDisplayed < 0.f) { PlayerHpDisplayed = Frac; }
+		PlayerHpDisplayed = (Frac < PlayerHpDisplayed)
+			? FMath::Max(Frac, PlayerHpDisplayed - DelayBarCatchupPerSec * Dt)
+			: Frac;
+
+		const float BW = FMath::Min(560.f, VW * 0.44f);
+		const float BX = (VW - BW) * 0.5f;
+		const float BY = VH - 52.f;
+		DrawBar(BX, BY, BW, 18.f, Frac, PlayerHpDisplayed,
+			FLinearColor(0.2f, 0.85f, 0.25f, 1.f), FLinearColor(0.85f, 0.15f, 0.15f, 0.9f));
+		DrawLabel(FString::Printf(TEXT("HP %d / %d"), PC->Hp, PC->MaxHp), BX, BY - 18.f, FLinearColor::White);
+	}
+
 	// ---- プレイヤー攻撃ゲージ: 10 枠、画面下中央 ----
 	if (bShowPlayerGauge && PC)
 	{
@@ -116,7 +180,7 @@ void ACounterCoreHUD::DrawHUD()
 		const float SegW = 26.f, SegH = 16.f, Gap = 3.f;
 		const float TotalW = Max * SegW + (Max - 1) * Gap;
 		const float GX = (VW - TotalW) * 0.5f;
-		const float GY = VH - 92.f;
+		const float GY = VH - 116.f;
 		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.55f), GX - 6, GY - 6, TotalW + 12, SegH + 12);
 		for (int32 i = 0; i < Max; ++i)
 		{
@@ -161,5 +225,30 @@ void ACounterCoreHUD::DrawHUD()
 	if (PC && PC->GetCombatState() == EPlayerCombatState::Stun)
 	{
 		DrawLabel(TEXT("気絶！"), (VW * 0.5f) - 40.f, VH * 0.5f, FLinearColor(1.f, 0.3f, 0.3f), 1.6f);
+	}
+
+	// ---- ジャストガード フラッシュ ----
+	if (PG && GetWorld())
+	{
+		const float Since = GetWorld()->GetTimeSeconds() - PG->LastJustGuardTime;
+		if (Since >= 0.f && Since < 0.8f)
+		{
+			const float A = FMath::Clamp(1.f - Since / 0.8f, 0.f, 1.f);
+			DrawLabel(TEXT("JUST GUARD!"), (VW * 0.5f) - 90.f, VH * 0.38f, FLinearColor(0.4f, 0.9f, 1.f, A), 1.8f);
+		}
+	}
+
+	// ---- 決着表示 ----
+	if (UBattleDirectorComponent* BD = Player->FindComponentByClass<UBattleDirectorComponent>())
+	{
+		const EBattleResult R = BD->GetResult();
+		if (R == EBattleResult::PlayerWin)
+		{
+			DrawLabel(TEXT("YOU WIN"), (VW * 0.5f) - 110.f, VH * 0.42f, FLinearColor(1.f, 0.9f, 0.3f), 3.0f);
+		}
+		else if (R == EBattleResult::PlayerLose)
+		{
+			DrawLabel(TEXT("YOU LOSE"), (VW * 0.5f) - 120.f, VH * 0.42f, FLinearColor(1.f, 0.3f, 0.3f), 3.0f);
+		}
 	}
 }

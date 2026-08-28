@@ -58,6 +58,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Guard", meta = (ClampMin = "0"))
 	float GuardHitStopDuration = 0.09f;
 
+	// --- ジャストガード（仕様書 優先順位「ジャストガード」）---
+
+	/** ガード開始からこの秒数以内に敵の攻撃を受けたらジャストガード。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|JustGuard", meta = (ClampMin = "0"))
+	float JustGuardWindow = 0.2f;
+
+	/** ジャストガード時の攻撃ゲージ上昇倍率（通常ガードの何倍か）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|JustGuard", meta = (ClampMin = "1"))
+	float JustGuardGaugeMultiplier = 2.5f;
+
+	/** ジャストガード時に盾耐久の減少を抑える割合（0 = 削られない、1 = 通常どおり）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|JustGuard", meta = (ClampMin = "0", ClampMax = "1"))
+	float JustGuardChipScale = 0.25f;
+
 	/** true でガード中は移動速度を 0 にする。仕様: 「移動しながらのガード: 不可」。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Guard")
 	bool bLockMovementWhileGuarding = true;
@@ -116,6 +130,11 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Player|Guard") FPlayerGuardTimeChanged OnGuardTimeChanged;
 	UPROPERTY(BlueprintAssignable, Category = "Player|Guard") FPlayerGuardSimpleEvent OnGuardBroken; // 盾耐久0
 	UPROPERTY(BlueprintAssignable, Category = "Player|Guard") FPlayerGuardSimpleEvent OnGuardSuccess;
+	UPROPERTY(BlueprintAssignable, Category = "Player|Guard") FPlayerGuardSimpleEvent OnJustGuard;
+
+	/** 直近のガードがジャストガードだったか（HUD 表示用、成功後しばらく true）。 */
+	UPROPERTY(BlueprintReadOnly, Category = "Player|Guard")
+	float LastJustGuardTime = -100.f;
 
 protected:
 	virtual void BeginPlay() override;
@@ -135,5 +154,6 @@ private:
 	float CooldownTimer = 0.f;
 	float ShieldRegenDelayTimer = 0.f;
 	float SavedMaxWalkSpeed = -1.f;
+	float TimeSinceGuardStart = 0.f;
 	FTimerHandle HitStopTimerHandle;
 };

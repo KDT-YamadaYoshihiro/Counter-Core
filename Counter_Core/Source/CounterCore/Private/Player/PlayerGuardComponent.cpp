@@ -77,6 +77,10 @@ void UPlayerGuardComponent::SetGuarding(bool bNewGuarding)
 		return;
 	}
 	bGuarding = bNewGuarding;
+	if (bGuarding)
+	{
+		TimeSinceGuardStart = 0.f;
+	}
 
 	// 仕様: 移動しながらのガード不可。ガード中は MaxWalkSpeed を 0 に。
 	if (bLockMovementWhileGuarding)
@@ -123,6 +127,7 @@ void UPlayerGuardComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 
 	if (bGuarding)
 	{
+		TimeSinceGuardStart += DeltaTime;
 		// ガード可能時間を消費。使い切ったら強制解除＋クールタイム。
 		GuardTimeRemaining = FMath::Max(0.f, GuardTimeRemaining - DeltaTime);
 		OnGuardTimeChanged.Broadcast(GuardTimeRemaining, MaxGuardTime);
@@ -190,16 +195,23 @@ bool UPlayerGuardComponent::HandleGuardedHit(int32 EnemyAttackPower, int32 Shiel
 
 	UPlayerCombatComponent* Combat = GetCombat();
 
+	// ジャストガード判定: ガード開始からの経過が窓内。
+	const bool bJust = bJustGuard || (TimeSinceGuardStart <= JustGuardWindow);
+
 	// 仕様 Battle 分岐A: HP ダメージ 0 / 盾耐久 -= 盾削り値 / ゲージ変換 / ヒットストップ。
-	const int32 Chip = ShieldChipValue > 0 ? ShieldChipValue : EnemyAttackPower;
+	int32 Chip = ShieldChipValue > 0 ? ShieldChipValue : EnemyAttackPower;
+	if (bJust)
+	{
+		Chip = FMath::RoundToInt(Chip * JustGuardChipScale);
+	}
 	ShieldDurability = FMath::Max(0.f, ShieldDurability - Chip);
 	OnShieldChanged.Broadcast(ShieldDurability, MaxShieldDurability);
 
 	if (Combat)
 	{
 		Combat->TakeIncomingHit(EnemyAttackPower, /*bGuarded*/ true);
-		// ジャストガードはゲージ上昇値が増える（仕様「ジャストガード」）。倍率は将来の調整用。
-		Combat->AddGaugeFromGuardedDamage(EnemyAttackPower, bJustGuard ? 2.f : 1.f);
+		// 仕様「ジャストガード」: 攻撃ゲージ上昇値が増える。
+		Combat->AddGaugeFromGuardedDamage(EnemyAttackPower, bJust ? JustGuardGaugeMultiplier : 1.f);
 	}
 
 	// 盾耐久の自然回復を一旦止める（成功1秒後から再開）。
@@ -207,6 +219,14 @@ bool UPlayerGuardComponent::HandleGuardedHit(int32 EnemyAttackPower, int32 Shiel
 
 	ApplyGuardHitStop();
 	OnGuardSuccess.Broadcast();
+	if (bJust)
+	{
+		if (const UWorld* World = GetWorld())
+		{
+			LastJustGuardTime = World->GetTimeSeconds();
+		}
+		OnJustGuard.Broadcast();
+	}
 
 	// 仕様 Player「気絶」: 盾耐久 0 → 10 秒行動不能。
 	if (ShieldDurability <= 0.f)

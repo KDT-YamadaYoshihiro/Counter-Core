@@ -15,7 +15,8 @@ public class CounterCore : ModuleRules
 			"EnhancedInput",
 			"GameplayTasks",
 			"AIModule",
-			"Niagara"
+			"Niagara",
+			"UMG"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

@@ -44,12 +44,32 @@
 
 さらに `UPlayerGuardComponent::bShowGuardText` で、HUD 未設定でもガード中の文字が出る（`AddOnScreenDebugMessage` フォールバック）。
 
+## ジャストガード（`UPlayerGuardComponent`）
+
+ガード開始から `JustGuardWindow`（0.2s）以内に敵の攻撃を受けたらジャストガード:
+- 攻撃ゲージ上昇 **×`JustGuardGaugeMultiplier`（2.5）**
+- 盾耐久の減少を **×`JustGuardChipScale`（0.25）** に軽減
+- `OnJustGuard` 発火、HUD に「JUST GUARD!」フラッシュ
+
+## 決着判定（`UBattleDirectorComponent`、BP_Player に追加）
+
+- 敵 HP0 → `PlayerWin`、プレイヤー HP0 → `PlayerLose`
+- 決着で全体スロー（`EndSlowMoTimeScale` 0.15 を `EndSlowMoRealDuration` 1.2s）+ プレイヤー入力停止
+- `OnBattleEnded(EBattleResult)` を発火（GM がリザルト遷移に使う）
+- HUD に「YOU WIN / YOU LOSE」表示
+
+## 旧 UI の除去
+
+`ACounterCoreHUD` が BeginPlay 後に数回スイープして、`UW_GameUI` / `UW_HpGaugeOnHead` 等
+（`LegacyWidgetNameContains`）をビューポートから外す（`bRemoveLegacyWidgets`）。BP 編集不要。
+
 ## まだ / 次フェーズ
 
 - **プレイテスト（実機 Play）未実施** — Simulate では possess されないため要 Play。
-- プレイヤー HP UI は既存 Widget のまま（HUD には未描画）。統一するなら既存 Widget を `Combat->OnHpChanged` に再バインド、または HUD にプレイヤー HP バーを追加。
 - HUD は暫定デザイン（文字・単色バー）。本 UI は UMG で作り直し想定。
 - IMC のキーマッピング（現状フォールバックポーリング）
+- `GM_Battle` の `OnBattleEnded` → リザルトシーン遷移の配線
+- SE / エフェクト、本アニメ、`BP_CharacterBase` の旧変数掃除
 - **ジャストガード**（中優先度）: `HandleGuardedHit` に `bJustGuard` 引数はあるが判定は未実装（今はゲージ2倍のフックのみ）
 - **UI Widget**: 攻撃ゲージ / 盾ゲージ / ガード残りサークル（`GetGaugeNormalized` / `GetShieldNormalized` / `GetGuardTimeNormalized` をバインド）。HP は既存 UI（要 `Combat->OnHpChanged` 再バインド）
 - **攻撃優先権の厳密判定**（同時攻撃フレーム検知）: 現状は「被弾 State になったら攻撃中断」で近似

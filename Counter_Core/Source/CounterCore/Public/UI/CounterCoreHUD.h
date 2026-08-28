@@ -23,10 +23,19 @@ class COUNTERCORE_API ACounterCoreHUD : public AHUD
 
 public:
 	virtual void DrawHUD() override;
+	virtual void BeginPlay() override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD") bool bShowPlayerGauge = true;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD") bool bShowPlayerHp = true;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD") bool bShowGuard = true;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD") bool bShowEnemyHp = true;
+
+	/** true で旧 UI ウィジェット（UW_GameUI / UW_HpGaugeOnHead 等）をビューポートから外す。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD") bool bRemoveLegacyWidgets = true;
+
+	/** 旧 UI とみなすウィジェットクラス名（部分一致）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD")
+	TArray<FString> LegacyWidgetNameContains = { TEXT("UW_GameUI"), TEXT("HpGaugeOnHead"), TEXT("GameUI") };
 
 	/** 遅延ダメージ（赤バー）が実 HP に追いつく速さ（割合/秒）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD", meta = (ClampMin = "0.01"))
@@ -38,6 +47,11 @@ private:
 		const FLinearColor& FillColor, const FLinearColor& DelayColor);
 	void DrawLabel(const FString& Text, float X, float Y, const FLinearColor& Color, float Scale = 1.f);
 
+	void SweepLegacyWidgets();
+
 	float EnemyHpDisplayed = -1.f;
+	float PlayerHpDisplayed = -1.f;
+	int32 LegacySweepsLeft = 0;
+	FTimerHandle LegacySweepTimer;
 	TWeakObjectPtr<AActor> CachedEnemy;
 };
