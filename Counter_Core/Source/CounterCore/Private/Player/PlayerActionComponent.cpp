@@ -8,11 +8,13 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/BoxComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "InputCoreTypes.h"
 #include "TimerManager.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
@@ -40,22 +42,31 @@ void UPlayerActionComponent::BeginPlay()
 		Combat = Owner->FindComponentByClass<UPlayerCombatComponent>();
 		Guard = Owner->FindComponentByClass<UPlayerGuardComponent>();
 
-		// 近接判定コンポーネント（既存 BP の "RightHand"）を名前で解決。
+		// 旧 BP の近接コンポーネント（RightHand）は常時 NoCollision にして旧処理を止める。
 		TArray<UPrimitiveComponent*> Prims;
 		Owner->GetComponents<UPrimitiveComponent>(Prims);
+		USkeletalMeshComponent* Mesh = Owner->FindComponentByClass<USkeletalMeshComponent>();
 		for (UPrimitiveComponent* Prim : Prims)
 		{
-			if (Prim && Prim->GetFName() == MeleeHitboxComponentName)
+			if (Prim && Prim->GetFName() == LegacyMeleeComponentName)
 			{
-				MeleeHitbox = Prim;
-				break;
+				Prim->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			}
 		}
+
+		// 自前の近接判定ボックスを手に生成。
+		MeleeHitbox = NewObject<UBoxComponent>(Owner, TEXT("PlayerMeleeHitbox"));
 		if (MeleeHitbox)
 		{
-			MeleeHitbox->OnComponentBeginOverlap.AddDynamic(this, &UPlayerActionComponent::OnMeleeOverlap);
-			MeleeHitbox->SetGenerateOverlapEvents(true);
+			MeleeHitbox->SetupAttachment(Mesh ? (USceneComponent*)Mesh : Owner->GetRootComponent(), MeleeSocket);
+			MeleeHitbox->RegisterComponent();
+			MeleeHitbox->SetBoxExtent(MeleeHitboxExtent);
 			MeleeHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			MeleeHitbox->SetCollisionObjectType(ECC_WorldDynamic);
+			MeleeHitbox->SetCollisionResponseToAllChannels(ECR_Ignore);
+			MeleeHitbox->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+			MeleeHitbox->SetGenerateOverlapEvents(true);
+			MeleeHitbox->OnComponentBeginOverlap.AddDynamic(this, &UPlayerActionComponent::OnMeleeOverlap);
 		}
 	}
 
@@ -116,9 +127,12 @@ void UPlayerActionComponent::BindInput()
 	if (IA_Guard)
 	{
 		EIC->BindAction(IA_Guard, ETriggerEvent::Started, this, &UPlayerActionComponent::OnGuardStarted);
-		EIC->BindAction(IA_Guard, ETriggerEvent::Completed, this, &UPlayerActionComponent::OnGuardStarted);
+		EIC->BindAction(IA_Guard, ETriggerEvent::Completed, this, &UPlayerActionComponent::OnGuardCompleted);
 		EIC->BindAction(IA_Guard, ETriggerEvent::Canceled, this, &UPlayerActionComponent::OnGuardCompleted);
 	}
+
+	// フォールバックキーは TickComponent の PollFallbackInput でポーリング（Enhanced Input では
+	// BindKey が使えないため）。
 }
 
 void UPlayerActionComponent::OnGuardStarted(const FInputActionValue&)
@@ -137,6 +151,40 @@ void UPlayerActionComponent::OnGuardCompleted(const FInputActionValue&)
 }
 void UPlayerActionComponent::OnMoveInput(const FInputActionValue&)
 {
+}
+
+void UPlayerActionComponent::PollFallbackInput()
+{
+	if (!bBindFallbackKeys)
+	{
+		return;
+	}
+	APlayerController* PC = GetOwner() ? Cast<APlayerController>(Cast<APawn>(GetOwner())->GetController()) : nullptr;
+	if (!PC)
+	{
+		return;
+	}
+
+	auto Pressed = [PC](FKey A, FKey B) { return PC->WasInputKeyJustPressed(A) || PC->WasInputKeyJustPressed(B); };
+
+	if (Pressed(EKeys::Gamepad_FaceButton_Left, EKeys::J))   { TryAttack(EPlayerAttackTier::Small); }
+	if (Pressed(EKeys::Gamepad_FaceButton_Top, EKeys::K))    { TryAttack(EPlayerAttackTier::Medium); }
+	if (Pressed(EKeys::Gamepad_RightShoulder, EKeys::L))     { TryAttack(EPlayerAttackTier::Heavy); }
+	if (Pressed(EKeys::Gamepad_FaceButton_Bottom, EKeys::SpaceBar)) { TryDodge(); }
+	if (Pressed(EKeys::Gamepad_FaceButton_Right, EKeys::H))  { TryHeal(); }
+
+	const bool bGuardDown = PC->IsInputKeyDown(EKeys::Gamepad_RightTrigger) || PC->IsInputKeyDown(EKeys::RightMouseButton);
+	if (Guard)
+	{
+		if (bGuardDown && !Guard->IsGuarding() && CanStartAction(EPlayerActionType::Guard))
+		{
+			Guard->StartGuard();
+		}
+		else if (!bGuardDown && Guard->IsGuarding())
+		{
+			Guard->StopGuard();
+		}
+	}
 }
 
 // --------------------------------------------------------------------------
@@ -603,6 +651,8 @@ void UPlayerActionComponent::PrintAction(const FString& Msg, const FColor& Color
 void UPlayerActionComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	PollFallbackInput();
 
 	switch (CurrentAction)
 	{

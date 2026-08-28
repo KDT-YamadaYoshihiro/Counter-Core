@@ -47,9 +47,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack")
 	FName HeavyStartId = FName("Heavy");
 
-	/** 近接判定に使うコンポーネント名（既存 BP の "RightHand"）。 */
+	/** 近接判定ボックスをアタッチするメッシュのソケット / ボーン名。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack")
-	FName MeleeHitboxComponentName = FName("RightHand");
+	FName MeleeSocket = FName("hand_r");
+
+	/** 近接判定ボックスの大きさ。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack")
+	FVector MeleeHitboxExtent = FVector(40.f, 40.f, 40.f);
+
+	/** 既存 BP の近接コンポーネント名。見つかったら常時 NoCollision にして旧処理を止める。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack")
+	FName LegacyMeleeComponentName = FName("RightHand");
 
 	// --- 回避（仕様: ローリング / 無敵時間あり）---
 
@@ -93,6 +101,10 @@ public:
 	TObjectPtr<UInputMappingContext> InputMapping;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Input", meta = (ClampMin = "0"))
 	int32 InputMappingPriority = 1;
+
+	/** true で IMC 未設定でも既定キー（RT/A/X/Y/RB/B、キーボード J/K/L/Space/H/右クリック）を直接バインド。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Input")
+	bool bBindFallbackKeys = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Input")
 	TObjectPtr<UInputAction> IA_AttackSmall;
@@ -161,6 +173,9 @@ private:
 	void OnGuardCompleted(const FInputActionValue&);
 	void OnMoveInput(const FInputActionValue& Value);
 
+	/** IMC 未設定時のフォールバック（キーポーリング）。 */
+	void PollFallbackInput();
+
 	// アクション
 	void SetCurrentAction(EPlayerActionType New);
 	void StartAttackRow(FName AttackId);
@@ -184,7 +199,7 @@ private:
 
 	UPROPERTY() TObjectPtr<UPlayerCombatComponent> Combat;
 	UPROPERTY() TObjectPtr<UPlayerGuardComponent> Guard;
-	UPROPERTY() TObjectPtr<UPrimitiveComponent> MeleeHitbox;
+	UPROPERTY() TObjectPtr<class UBoxComponent> MeleeHitbox;
 
 	UFUNCTION()
 	void HandleCombatStateChanged(EPlayerCombatState OldState, EPlayerCombatState NewState);
