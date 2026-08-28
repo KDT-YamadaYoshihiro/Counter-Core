@@ -489,7 +489,13 @@ void UPlayerActionComponent::TryDodge()
 		{
 			if (UAnimInstance* Anim = Mesh->GetAnimInstance())
 			{
-				Anim->Montage_Play(DodgeMontage);
+				// 回避モーションを DodgeDuration に収まるよう再生レートを合わせる
+				// （仮アセットが長いと回避終了後もアニメが残って見えるため）。
+				const float MontageLen = DodgeMontage->GetPlayLength();
+				const float Rate = (DodgeDuration > 0.05f && MontageLen > 0.05f)
+					? FMath::Clamp(MontageLen / DodgeDuration, 0.2f, 4.f)
+					: 1.f;
+				Anim->Montage_Play(DodgeMontage, Rate);
 			}
 		}
 	}
@@ -525,6 +531,20 @@ void UPlayerActionComponent::TickDodge(float Dt)
 			Combat->SetInvulnerable(false);
 		}
 		bDodgeIFrame = false;
+		// 回避終了時にモーションも明示的に止める（残り再生を持ち越さない）。
+		if (DodgeMontage)
+		{
+			if (USkeletalMeshComponent* Mesh = GetOwner() ? GetOwner()->FindComponentByClass<USkeletalMeshComponent>() : nullptr)
+			{
+				if (UAnimInstance* Anim = Mesh->GetAnimInstance())
+				{
+					if (Anim->Montage_IsPlaying(DodgeMontage))
+					{
+						Anim->Montage_Stop(0.15f, DodgeMontage);
+					}
+				}
+			}
+		}
 		SetCurrentAction(EPlayerActionType::None);
 	}
 }
