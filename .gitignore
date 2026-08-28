@@ -77,3 +77,10 @@ DerivedDataCache/*
 /Counter_Core/Saved/UnrealBuildTool
 /Counter_Core/DerivedDataCache/VT
 /Counter_Core/Saved
+
+# AI agent scratch / generated (ClaudeCode-GUI + MCP work)
+Counter_Core/.mcp.json
+Counter_Core/_spec_tmp/
+Counter_Core/Content/Generated/
+/Counter_Core/Binaries/
+/Counter_Core/Intermediate/

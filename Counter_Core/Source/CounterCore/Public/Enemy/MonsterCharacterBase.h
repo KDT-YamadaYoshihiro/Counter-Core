@@ -1,0 +1,141 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Character.h"
+#include "Enemy/MonsterTypes.h"
+#include "MonsterCharacterBase.generated.h"
+
+class UMonsterCombatComponent;
+class UMonsterAttackComponent;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FMonsterStateChanged, EMonsterState, OldState, EMonsterState, NewState);
+
+/**
+ * 仕様書（Monster / 攻撃詳細）どおりのボス敵の C++ 実装。
+ *
+ * 内蔵の軽量ステートマシン（EMonsterState）で 待機/移動/攻撃/やられ/スタン/死亡 を回し、
+ * ロジックの実体は UMonsterCombatComponent（被ダメージ・スタン・死亡）と
+ * UMonsterAttackComponent（コンボ選択・攻撃タイムライン）に委譲する。
+ *
+ * アニメ・コリジョン実体・VFX は BlueprintNativeEvent / デリゲートで BP 側へ。
+ * BP_Enemy をこのクラスに reparent して使うか、コンポーネントだけ流用する。
+ */
+UCLASS(Blueprintable)
+class COUNTERCORE_API AMonsterCharacterBase : public ACharacter
+{
+	GENERATED_BODY()
+
+public:
+	AMonsterCharacterBase();
+
+	// --- 設定 ---
+
+	/** プレイヤーを発見する距離（cm）。仕様の Idle DetectionRadius=1000 相当。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|AI", meta = (ClampMin = "0"))
+	float DetectionRange = 1000.f;
+
+	/** これ以上近づいたら移動をやめて攻撃判断に入る距離（cm）。Run DetectionRadius=70 相当。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|AI", meta = (ClampMin = "0"))
+	float EngageRange = 300.f;
+
+	/** AI の行動ループ（コンボ ID の並び）。空なら SelectCombo に一任。仕様: 待機→(3)→…→4 のループ。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|AI")
+	TArray<FName> ActionLoop;
+
+	// --- コンポーネント ---
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Monster")
+	TObjectPtr<UMonsterCombatComponent> Combat;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Monster")
+	TObjectPtr<UMonsterAttackComponent> Attack;
+
+	// --- ステート ---
+
+	UFUNCTION(BlueprintPure, Category = "Monster|State")
+	EMonsterState GetMonsterState() const { return State; }
+
+	/** 状態遷移。優先度が低い遷移は無視される（Dead > Stun > Hitstun > Attack > Run > Idle）。 */
+	UFUNCTION(BlueprintCallable, Category = "Monster|State")
+	void RequestState(EMonsterState NewState);
+
+	/** 優先度を無視して強制遷移。 */
+	UFUNCTION(BlueprintCallable, Category = "Monster|State")
+	void ForceState(EMonsterState NewState);
+
+	UPROPERTY(BlueprintAssignable, Category = "Monster|State")
+	FMonsterStateChanged OnStateChanged;
+
+	// --- ターゲット ---
+
+	UFUNCTION(BlueprintCallable, Category = "Monster")
+	void SetTarget(AActor* InTarget);
+
+	UFUNCTION(BlueprintPure, Category = "Monster")
+	AActor* GetTarget() const { return TargetActor; }
+
+	UFUNCTION(BlueprintPure, Category = "Monster")
+	float GetDistanceToTargetCm() const;
+
+	/** 正面 0 度、右+ / 左- の符号付き角度（deg）。 */
+	UFUNCTION(BlueprintPure, Category = "Monster")
+	float GetSignedAngleToTargetDeg() const;
+
+	// --- BP フック（見た目）---
+
+	/** アニメモンタージュ再生。代用: BP で適当なモンタージュを鳴らす。 */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Monster|FX")
+	void BP_PlayAttackMontage(FName AttackId);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Monster|FX")
+	void BP_PlayReaction(EMonsterState NewState);
+
+	/** 攻撃判定コリジョンの ON/OFF。代用: BP で簡易ボックスをトグル。 */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Monster|FX")
+	void BP_SetHitboxActive(bool bActive);
+
+	/** プレイヤーへダメージを与えるフック（攻撃がヒットした瞬間、BP から呼ぶ or C++ で ApplyDamage）。 */
+	UFUNCTION(BlueprintCallable, Category = "Monster|Combat")
+	void DealDamageToTarget(int32 AttackPower);
+
+protected:
+	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
+	virtual float TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator,
+		AActor* DamageCauser) override;
+
+	// ステート実装
+	void EnterState(EMonsterState NewState);
+	void TickIdle(float Dt);
+	void TickRun(float Dt);
+	void TickAttack(float Dt);
+	void TickHitstun(float Dt);
+
+	// 攻撃コンポーネントのイベント
+	UFUNCTION()
+	void HandleAttackFinished();
+	UFUNCTION()
+	void HandleCombatStateRequest(EMonsterState Requested);
+	UFUNCTION()
+	void HandleToggleHitbox(bool bEnable);
+	UFUNCTION()
+	void HandlePlayAttackAnim(FName AttackId);
+
+private:
+	static int32 StatePriority(EMonsterState S);
+	void AdvanceCombo();
+
+	UPROPERTY()
+	TObjectPtr<AActor> TargetActor;
+
+	EMonsterState State = EMonsterState::Idle;
+
+	// 進行中コンボ
+	TArray<FName> CurrentComboAttacks;
+	int32 ComboIndex = 0;
+	int32 ActionLoopIndex = 0;
+
+	// Hitstun
+	float HitstunTimer = 0.f;
+	FVector HitstunKnockbackDir = FVector::ZeroVector;
+};
