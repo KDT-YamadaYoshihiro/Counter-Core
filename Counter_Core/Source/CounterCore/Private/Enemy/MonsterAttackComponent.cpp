@@ -122,6 +122,8 @@ void UMonsterAttackComponent::StartAttack(FName AttackId)
 	bHitboxOn = false;
 	SetComponentTickEnabled(true);
 	PrintAttackEvent(TEXT("攻撃開始"), FColor::Cyan);
+	// 仕様書「攻撃詳細」: モーションは予兆の頭（[0.0s]）から。攻撃モンタージュはここで再生。
+	OnPlayAttackAnim.Broadcast(ActiveData.AttackId);
 	SetPhase(EMonsterAttackPhase::Anticipation);
 }
 
@@ -168,7 +170,7 @@ void UMonsterAttackComponent::SetPhase(EMonsterAttackPhase NewPhase)
 
 	if (NewPhase == EMonsterAttackPhase::HitActive)
 	{
-		OnPlayAttackAnim.Broadcast(ActiveData.AttackId);
+		OnAttackHitActive.Broadcast(ActiveData.AttackId);
 	}
 }
 
