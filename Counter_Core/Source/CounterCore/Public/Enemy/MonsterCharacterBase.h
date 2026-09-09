@@ -66,6 +66,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Debug")
 	bool bEnableDebugKeys = true;
 
+	/** true で武器の当たり判定シェイプを常時表示（判定ON中は色を変える）。false なら従来どおり判定ON中だけ表示。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Debug")
+	bool bAlwaysShowHitbox = true;
+
+	/** 判定OFF中のワイヤーフレーム色。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Debug")
+	FColor HitboxInactiveColor = FColor::Green;
+
+	/** 判定ON中のワイヤーフレーム色。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Debug")
+	FColor HitboxActiveColor = FColor::Red;
+
 	/** 移動速度（cm/s）。CharacterMovement の MaxWalkSpeed に反映。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|AI", meta = (ClampMin = "0"))
 	float ChaseSpeed = 350.f;
@@ -306,6 +318,9 @@ private:
 
 	/** 攻撃判定に使う実体を返す（武器内のシェイプ優先、無ければ内蔵 Hitbox）。 */
 	UPrimitiveComponent* ResolveAttackHitbox() const;
+
+	/** 当たり判定シェイプの表示/非表示・色を更新（bActive で判定ON/OFFの色を切り替え）。 */
+	void UpdateHitboxDebugVisual(bool bActive);
 
 	/** BeginPlay で解決した攻撃判定コンポーネント。 */
 	UPROPERTY()

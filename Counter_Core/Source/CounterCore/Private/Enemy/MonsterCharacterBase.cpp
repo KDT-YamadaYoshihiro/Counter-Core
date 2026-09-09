@@ -123,8 +123,15 @@ void AMonsterCharacterBase::OnConstruction(const FTransform& Transform)
 		}
 		if (GetMesh())
 		{
+			// 付け替え先（親/ソケット）が変わっていなければ再アタッチしない。
+			// 毎回 SnapToTarget で貼り直すと、Details パネルで調整した WeaponActor の
+			// 相対 Transform（握り位置・向き）が OnConstruction のたびに 0 へ戻ってしまう。
+			const bool bNeedsReattach = WeaponActor->GetAttachParent() != GetMesh()
+				|| WeaponActor->GetAttachSocketName() != WeaponSocket;
 			WeaponActor->AttachToComponent(GetMesh(),
-				FAttachmentTransformRules::SnapToTargetNotIncludingScale, WeaponSocket);
+				bNeedsReattach ? FAttachmentTransformRules::SnapToTargetNotIncludingScale
+				               : FAttachmentTransformRules::KeepRelativeTransform,
+				WeaponSocket);
 		}
 	}
 }
@@ -139,6 +146,21 @@ UPrimitiveComponent* AMonsterCharacterBase::ResolveAttackHitbox() const
 		}
 	}
 	return Hitbox;
+}
+
+void AMonsterCharacterBase::UpdateHitboxDebugVisual(bool bActive)
+{
+	if (!ActiveHitbox)
+	{
+		return;
+	}
+	const bool bShow = CounterCoreDebug::IsOnScreenDebugEnabled() && (bAlwaysShowHitbox || bActive);
+	ActiveHitbox->SetHiddenInGame(!bShow);
+	if (UShapeComponent* Shape = Cast<UShapeComponent>(ActiveHitbox))
+	{
+		Shape->ShapeColor = bActive ? HitboxActiveColor : HitboxInactiveColor;
+		Shape->MarkRenderStateDirty();
+	}
 }
 
 int32 AMonsterCharacterBase::CurrentAttackPower() const
@@ -196,8 +218,13 @@ void AMonsterCharacterBase::BeginPlay()
 		}
 		if (GetMesh())
 		{
+			// OnConstruction 同様、既に正しいソケットへアタッチ済みなら相対 Transform を維持する。
+			const bool bNeedsReattach = WeaponActor->GetAttachParent() != GetMesh()
+				|| WeaponActor->GetAttachSocketName() != WeaponSocket;
 			WeaponActor->AttachToComponent(GetMesh(),
-				FAttachmentTransformRules::SnapToTargetNotIncludingScale, WeaponSocket);
+				bNeedsReattach ? FAttachmentTransformRules::SnapToTargetNotIncludingScale
+				               : FAttachmentTransformRules::KeepRelativeTransform,
+				WeaponSocket);
 		}
 	}
 
@@ -219,6 +246,7 @@ void AMonsterCharacterBase::BeginPlay()
 		ActiveHitbox->SetGenerateOverlapEvents(true);
 		ActiveHitbox->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 		ActiveHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		UpdateHitboxDebugVisual(false);
 	}
 
 	if (UCharacterMovementComponent* Move = GetCharacterMovement())
@@ -338,7 +366,7 @@ void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 	if (NewState != EMonsterState::Attack && ActiveHitbox)
 	{
 		ActiveHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		ActiveHitbox->SetHiddenInGame(true);
+		UpdateHitboxDebugVisual(false);
 	}
 
 	State = NewState;
@@ -644,7 +672,7 @@ void AMonsterCharacterBase::HandleToggleHitbox(bool bEnable)
 	{
 		HitActorsThisSwing.Reset();
 		ActiveHitbox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-		ActiveHitbox->SetHiddenInGame(!CounterCoreDebug::IsOnScreenDebugEnabled()); // 判定中のワイヤーフレーム表示
+		UpdateHitboxDebugVisual(true);
 		// 判定ONの瞬間に既に重なっている相手も拾う。
 		TArray<AActor*> Overlapping;
 		ActiveHitbox->GetOverlappingActors(Overlapping, APawn::StaticClass());
@@ -656,7 +684,7 @@ void AMonsterCharacterBase::HandleToggleHitbox(bool bEnable)
 	else
 	{
 		ActiveHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		ActiveHitbox->SetHiddenInGame(true);
+		UpdateHitboxDebugVisual(false);
 		HitActorsThisSwing.Reset();
 	}
 }
