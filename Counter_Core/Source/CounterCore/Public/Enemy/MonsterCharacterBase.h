@@ -66,15 +66,38 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Debug")
 	bool bEnableDebugKeys = true;
 
+	/** true で武器の当たり判定シェイプを常時表示（判定ON中は色を変える）。false なら従来どおり判定ON中だけ表示。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Debug")
+	bool bAlwaysShowHitbox = true;
+
+	/** 判定OFF中のワイヤーフレーム色。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Debug")
+	FColor HitboxInactiveColor = FColor::Green;
+
+	/** 判定ON中のワイヤーフレーム色。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Debug")
+	FColor HitboxActiveColor = FColor::Red;
+
 	/** 移動速度（cm/s）。CharacterMovement の MaxWalkSpeed に反映。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|AI", meta = (ClampMin = "0"))
 	float ChaseSpeed = 350.f;
 
 	// --- 代用アニメ（未設定でもロジックは動く）---
 
-	/** 攻撃 ID → 再生するモンタージュ。未設定なら再生しないだけ。代用: Mannequin の攻撃アニメを割り当て。 */
+	/**
+	 * 攻撃 ID（DT_MonsterAttacks の行名: Attack01〜Attack04 / Attack05_1 / Attack05_2）→ モンタージュ。
+	 * 攻撃開始（予兆の頭）で再生。未設定なら再生しないだけ。
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
 	TMap<FName, TObjectPtr<UAnimMontage>> AttackMontages;
+
+	/** true で攻撃モンタージュの再生レートを DT_MonsterAttacks.EndTime に合わせて自動調整（尺の食い込み防止）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	bool bScaleAttackMontageToTimeline = true;
+
+	/** モンタージュ自動レートの下限・上限（X=min, Y=max）。速すぎ / 遅すぎを防ぐ。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	FVector2D AttackMontageRateRange = FVector2D(0.5f, 2.0f);
 
 	/** 状態 → リアクション用モンタージュ（やられ/スタン/死亡）。未設定なら再生しないだけ。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
@@ -282,6 +305,8 @@ protected:
 	void HandleToggleHitbox(bool bEnable);
 	UFUNCTION()
 	void HandlePlayAttackAnim(FName AttackId);
+	UFUNCTION()
+	void HandleAttackHitActive(FName AttackId);
 
 	UFUNCTION()
 	void OnHitboxOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp,
@@ -293,6 +318,9 @@ private:
 
 	/** 攻撃判定に使う実体を返す（武器内のシェイプ優先、無ければ内蔵 Hitbox）。 */
 	UPrimitiveComponent* ResolveAttackHitbox() const;
+
+	/** 当たり判定シェイプの表示/非表示・色を更新（bActive で判定ON/OFFの色を切り替え）。 */
+	void UpdateHitboxDebugVisual(bool bActive);
 
 	/** BeginPlay で解決した攻撃判定コンポーネント。 */
 	UPROPERTY()

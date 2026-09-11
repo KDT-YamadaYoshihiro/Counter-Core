@@ -39,6 +39,19 @@
   位置がズレるなら `BP_Enemy` の `WeaponActor` コンポーネントの相対トランスフォームで微調整。
 - 攻撃判定は **武器（`BP_Weapon`）内のシェイプ（`AttackHitBox`）を優先使用**。武器が無ければ内蔵 `Hitbox`（`UBoxComponent`）にフォールバック。
   判定は攻撃タイムラインの HitActive 区間だけ ON、1スイング1ヒット。ON 中はワイヤーフレーム表示。
+
+#### 武器メッシュ（`/Game/Weapon`）— 設定済み・向きは要目視
+
+`buki_2.fbx`（骨・帯・角の大型ポールウェポン、全長約3m）を `combine_meshes` で
+`/Game/Weapon/SM_MonsterWeapon` に1メッシュ統合。マテリアル `hone/obi/obi2/obi2_metal/obi_metal/tuno` 割当済み。
+
+- `BP_Weapon`: StaticMesh → `SM_MonsterWeapon`（旧 `SM_Sword_08` から差替）。
+  `AttackHitBox`（Box）を刃部分に合わせて `loc (2,14,105) / ext (18,52,68)` に設定
+  （メッシュはローカル +Z が柄→刃方向、柄中心 z≈-100 / 刃 z≈+40〜+170）。
+- `BP_Enemy.WeaponActor` 相対 `loc (-2,-4,100)` で柄を `hand_r` へ寄せてある。
+  **回転は (0,0,0) 仮**。FBX のローカル軸と攻撃モンタージュの握り方に合わせてエディタで要調整
+  （握り位置・武器の傾き）。
+- VFX は `AttackHitBox` にアタッチして出るので、刃にハコが合えば自動で刃先から出る。ズレは `AttackVFXOffset`。
 - `UMonsterAttackComponent::bDrawDebug`（既定 true）: プレイ中、足元に
   - 各コンボの発動条件（最大距離リング + 角度ウェッジ、条件成立で緑／不成立で灰、背後条件は後方ウェッジ）
   - 進行中の攻撃の接触距離・接触角度、フェーズ名（予兆／発生前／判定／硬直）、経過秒、ダメージ
@@ -119,8 +132,61 @@
   `ActionLoop = [Combo3, Combo1, Combo1, Combo0, Combo1, Combo2, Combo3, Combo0, Combo1, Combo3, Combo4]` /
   `Combat.Status`（HP500 / 防御40 / スタン上限100）/
   `Attack.AttackDataTable = DT_MonsterAttacks` / `Attack.ComboDataTable = DT_MonsterCombos` /
-  `WeaponClass = BP_Weapon` /
-  `AttackMontages` は全攻撃（Attack01〜Attack05_2）に `MM_Attack_01_Montage` を**仮**設定（本アセット待ち）。
+  `WeaponClass = BP_Weapon`。
+
+### 見た目アセット（`/Game/MonsterAnimation`）— 設定済み・AnimBP 不要
+
+**AnimBlueprint アセットは使わない。** ネイティブ `UMonsterAnimInstance`
+（`MonsterAnimInstance.h/.cpp`）が移動ブレンドとモンタージュ再生の両方を C++ で行う。
+`AMonsterCharacterBase` のコンストラクタが `Mesh` の AnimClass に自動設定し、
+`BP_Enemy` のディテールにも明示設定済み（Python コマンドレットで適用・保存済み）。
+
+`FMonsterAnimInstanceProxy` のノード構成（AnimGraph 相当を C++ で組んである）:
+
+```
+[Idle SequencePlayer(MM_MonsterIdle)] --A--\
+                                            [TwoWayBlend] --> [Slot "DefaultSlot"] --> Output
+[Run  SequencePlayer(MM_MonsterRun)]  --B--/      ^                   ^
+                                              Alpha            攻撃/やられ/スタンの
+                                        (GroundSpeed から補間)    モンタージュがここに乗る
+```
+
+| スロット | アセット | 仕様書 |
+|---|---|---|
+| `Mesh` SkeletalMesh | `SM_Monster`（＝スケルタルメッシュ本体。命名が UE 慣例と逆。スケルトン `SK_Monster` / 物理 `PhysicsAsset_Monster` はメッシュ側に設定済み） | Monster「モデル」 |
+| `Mesh` AnimClass | `UMonsterAnimInstance`（ネイティブ、`/Script/CounterCore.MonsterAnimInstance`） | — |
+| `Mesh` 相対トランスフォーム | `loc (0,0,-89)` / `rot (0,270,0)` 仮置き | — |
+| Idle / Run ループ | `MM_MonsterIdle` / `MM_MonsterRun`（`UMonsterAnimInstance` の `IdleAnim`/`RunAnim`、コンストラクタで既定設定） | 移動 / 待機 |
+| `AttackMontages` `Attack01`〜`Attack04` | `AM_MonsterAttack1`〜`4` | 拳 / 斧振り下ろし / 斧右→左 / 振り返り |
+| `AttackMontages` `Attack05_1` / `Attack05_2` | `AM_MonsterAttack5` / `AM_MonsterAttack6` | 攻撃5 2連の1段目（振り上げ）/ 2段目（振り下ろし） |
+| `ReactionMontages[Hitstun]` | `AM_MonsterDamage` | やられ |
+| `ReactionMontages[Stun]` | `AM_MonsterStanIdle` | スタン15秒（ループ姿勢） |
+| `bRagdollOnDeath` | `true` に変更（元 false） | 死亡＝`PhysicsAsset_Monster` でラグドール |
+
+攻撃モンタージュの扱い（`AMonsterCharacterBase`）:
+- **攻撃開始（予兆の頭）で再生**。`UMonsterAttackComponent::OnPlayAttackAnim` を `StartAttack` で発火
+  （旧: HitActive 突入時）。VFX は従来どおり HitActive（`OnAttackHitActive` 新設）。
+- キーは `DT_MonsterAttacks` の行名と一致（`Attack01`〜`Attack04` / `Attack05_1` / `Attack05_2`）。
+  攻撃5は `DT_MonsterCombos.Combo4 = (Attack05_1, Attack05_2)` で2発の通常コンボとして駆動。
+  Attack05_1 は `bImmuneToHitstun` / 両方 `bNoHitstunChain`（＝やられで次コンボへ連鎖しない）。
+- `bScaleAttackMontageToTimeline`（既定 true）: `AM_Monster*` は攻撃ウィンドウより長め
+  （AM_MonsterAttack5 = 3.7s / Attack05_1.EndTime = 1.5s 等）なので、再生レート =
+  `モンタージュ長 / EndTime` で尺を詰める。範囲は `AttackMontageRateRange`（既定 0.5〜2.0）。
+
+調整パラメータ（`BP_Enemy` の `Mesh` → AnimClass のディテール、または `UMonsterAnimInstance` の既定値）:
+`RunSpeedThreshold`（既定 300、この速度で走り 100%）/ `BlendInterpSpeed`（既定 8、Idle↔Run 追従）。
+
+- `Module` 依存に `AnimGraphRuntime` を追加済み（`FAnimNode_Slot` / `FAnimNode_TwoWayBlend`）。
+- 全モンタージュのスロットは `DefaultSlot`。
+- **トレードオフ**: AnimBP が無いのでアニメーターが GUI で調整できない。ブレンド時間・技追加・
+  フット IK・エイムオフセット等は `FMonsterAnimInstanceProxy` のコード変更になる。ボス1体なので許容。
+  GUI で作りたくなったら `ABP_Monster`（`SK_Monster`）を作って同じノード構成を組み、
+  `BP_Enemy` の AnimClass をそちらに差し替えるだけ。
+- `Mesh` バウンズは高さ約3.4m（大型ボス）。カプセルは `R35 / H90` のまま＝上半身がカプセルからはみ出す。
+  ボディコリジョンを持たせたいならカプセルを拡大（攻撃間合いはアクター位置基準なので数値仕様には影響なし）。
+- メッシュの向き（yaw 270）は要目視確認。FBX の正面軸によっては 0 / 90 / 180 に。
+- headless（`-game -nullrhi`）で 600 フレーム走らせてクラッシュ・アニメ警告なしを確認済み。
+  実際にモンタージュが乗る様子は PIE で要確認。
 
 > `BP_CharacterBase` を今後チームが更新しても敵には反映されない。共有したい処理が出たら
 > `MonsterCombatComponent` / `MonsterAttackComponent` 相当をコンポーネントとして
@@ -128,10 +194,8 @@
 
 ## まだ人手が必要（プレースホルダー可 / ロジックは未設定でも動く）
 
-1. **AnimMontage（本アセット差し替え）**: すべて Mannequin 同梱アニメの**仮**。
-   - `Attack Montages`（Attack01〜05_2）→ 全部 `MM_Attack_01_Montage`
-   - `Reaction Montages`: Hitstun=`MM_HitReact_Front_Med_01_Montage`、Stun=`MM_HitReact_Front_Hvy_01_Montage`、Dead=`MM_Death_Front_01_Montage`
-   本アセットができたら `BP_Enemy` のディテールで差し替え。スタンは 15 秒なので本来はループするダウンアニメ推奨。
+1. **モデル / アニメーションは適用済み**（AnimBP 不要。上記「見た目アセット」節）。
+   PIE で向き・スケール・モンタージュの見た目を確認して微調整するだけ。
 2. **武器の握り位置**: `hand_r` ボーン直付けなので少しズレる可能性あり。
    `BP_Enemy` → `WeaponActor` コンポーネントの相対トランスフォームで調整。
 3. **プレイヤー側の配線**:
