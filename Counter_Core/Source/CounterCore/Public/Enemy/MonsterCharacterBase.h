@@ -255,11 +255,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Monster|Debug")
 	void DebugTriggerDead();
 
-	/** K 相当: ガード成功の被弾をシミュレート。 */
+	/** N 相当: ガード成功の被弾をシミュレート。 */
 	UFUNCTION(BlueprintCallable, Category = "Monster|Debug")
 	void DebugGuardedHit();
 
-	/** L 相当: プレイヤーの通常攻撃ヒット（HP ダメージ + スタン蓄積）をシミュレート。 */
+	/** M 相当: プレイヤーの通常攻撃ヒット（HP ダメージ + スタン蓄積）をシミュレート。 */
 	UFUNCTION(BlueprintCallable, Category = "Monster|Debug")
 	void DebugPlayerHit();
 
@@ -290,7 +290,7 @@ protected:
 	bool EvaluateComboCondition(const FMonsterComboData& C) const; // 距離・角度・背後
 	bool RollComboProbability(const FMonsterComboData& C) const;
 	void PrintAI(const FString& Msg, const FColor& Color) const;
-	void PollDebugKeys(); // U / I / O / K / L
+	void PollDebugKeys(); // U / I / O / N / M
 	void EndHitStop();
 	void PlayCameraShake(TSubclassOf<UCameraShakeBase> ShakeClass) const;
 

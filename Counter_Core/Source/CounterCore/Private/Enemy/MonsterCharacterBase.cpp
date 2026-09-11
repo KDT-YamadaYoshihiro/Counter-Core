@@ -932,7 +932,7 @@ void AMonsterCharacterBase::PollDebugKeys()
 	if (GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(static_cast<uint64>(GetUniqueID()) + 900000, 0.2f, FColor::White,
-			TEXT("[敵デバッグ] U=スタン  I=やられ  O=死亡  K=ガード被弾  L=通常被弾"));
+			TEXT("[敵デバッグ] U=スタン  I=やられ  O=死亡  N=ガード被弾  M=通常被弾"));
 	}
 #endif
 
@@ -948,11 +948,11 @@ void AMonsterCharacterBase::PollDebugKeys()
 	{
 		DebugTriggerDead();
 	}
-	if (PC->WasInputKeyJustPressed(EKeys::K))
+	if (PC->WasInputKeyJustPressed(EKeys::N))
 	{
 		DebugGuardedHit();
 	}
-	if (PC->WasInputKeyJustPressed(EKeys::L))
+	if (PC->WasInputKeyJustPressed(EKeys::M))
 	{
 		DebugPlayerHit();
 	}
@@ -1003,7 +1003,7 @@ void AMonsterCharacterBase::DebugGuardedHit()
 	{
 		return;
 	}
-	PrintAI(TEXT("[DEBUG] ガード被弾 (K)"), FColor::Orange);
+	PrintAI(TEXT("[DEBUG] ガード被弾 (N)"), FColor::Orange);
 	Combat->HandleIncomingHit(50, /*bGuardedByPlayer*/ true);
 }
 
@@ -1013,7 +1013,7 @@ void AMonsterCharacterBase::DebugPlayerHit()
 	{
 		return;
 	}
-	PrintAI(TEXT("[DEBUG] 通常被弾 +スタン15 (L)"), FColor::Yellow);
+	PrintAI(TEXT("[DEBUG] 通常被弾 +スタン15 (M)"), FColor::Yellow);
 	Combat->HandleIncomingHit(60, /*bGuardedByPlayer*/ false);
 	Combat->AddStun(15); // プレイヤー中攻撃相当のスタン蓄積（Player シート）
 }

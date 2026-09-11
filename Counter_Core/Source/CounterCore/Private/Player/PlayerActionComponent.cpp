@@ -61,7 +61,9 @@ void UPlayerActionComponent::BeginPlay()
 
 		USceneComponent* MeshOrRoot = Mesh ? (USceneComponent*)Mesh : Owner->GetRootComponent();
 
-		// 剣を手に生成（敵と同じ BP_Weapon）。これは「見た目」専用。判定は下の自前ボックスで行う。
+		// 剣を手に生成（敵と同じ BP_Weapon）。判定も敵側（ResolveAttackHitbox）と同じく、
+		// 武器内のシェイプをそのまま攻撃判定として使う（剣の位置 / モーションに追従させるため）。
+		UShapeComponent* WeaponShape = nullptr;
 		if (WeaponClass)
 		{
 			WeaponActor = NewObject<UChildActorComponent>(Owner, TEXT("PlayerWeapon"));
@@ -70,28 +72,24 @@ void UPlayerActionComponent::BeginPlay()
 			WeaponActor->SetChildActorClass(WeaponClass);
 			WeaponActor->CreateChildActor();
 
-			// 武器 BP 側のシェイプが誤爆しないよう黙らせる（判定は使わない）。
 			if (AActor* W = WeaponActor->GetChildActor())
 			{
-				TArray<UShapeComponent*> WShapes;
-				W->GetComponents<UShapeComponent>(WShapes);
-				for (UShapeComponent* S : WShapes)
-				{
-					if (S)
-					{
-						S->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-						S->SetGenerateOverlapEvents(false);
-					}
-				}
+				WeaponShape = W->FindComponentByClass<UShapeComponent>();
 			}
 		}
 
-		// 近接判定ボックスは常に自前で生成し、プレイヤー前方に固定サイズで置く。
-		// （仮アセット / モンタージュに依存せず確実に敵カプセルへ当てるため。）
+		if (WeaponShape)
 		{
-			USceneComponent* AttachRoot = Owner->GetRootComponent();
+			// 武器のシェイプをそのまま判定に使う。ソケットにアタッチされているので
+			// 剣の位置とアニメーション（モンタージュでのボーン移動）にそのまま追従する。
+			MeleeHitbox = WeaponShape;
+		}
+		else
+		{
+			// 武器未設定時のみのフォールバック。WeaponSocket にアタッチし、剣がなくても
+			// 手の位置基準で判定できるようにする（プレイヤー前方固定オフセットにはしない）。
 			UBoxComponent* Box = NewObject<UBoxComponent>(Owner, TEXT("PlayerMeleeHitbox"));
-			Box->SetupAttachment(AttachRoot ? AttachRoot : MeshOrRoot);
+			Box->SetupAttachment(MeshOrRoot, WeaponSocket);
 			Box->RegisterComponent();
 			Box->SetRelativeLocation(MeleeHitboxOffset);
 			Box->SetBoxExtent(MeleeHitboxExtent);
