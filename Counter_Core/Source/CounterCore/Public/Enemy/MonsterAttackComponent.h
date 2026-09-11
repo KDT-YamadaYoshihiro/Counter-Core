@@ -111,9 +111,17 @@ public:
 
 	// --- デリゲート ---
 
-	/** アニメーション再生要求（HitActive 突入時）。 */
+	/**
+	 * アニメーション再生要求（攻撃開始時 = 予兆の頭）。
+	 * 仕様書「攻撃詳細」: 攻撃4/5 はモーション開始が [0.0s]。攻撃1〜3 も予兆から一連で見せる。
+	 * モンタージュは受け手側で攻撃タイムライン（EndTime）に尺を合わせる。
+	 */
 	UPROPERTY(BlueprintAssignable, Category = "Monster|Attack")
 	FMonsterAttackAnim OnPlayAttackAnim;
+
+	/** 攻撃判定 ON の瞬間（斬撃 VFX 等をここで出す）。 */
+	UPROPERTY(BlueprintAssignable, Category = "Monster|Attack")
+	FMonsterAttackAnim OnAttackHitActive;
 
 	/** 攻撃判定コリジョンの ON/OFF。 */
 	UPROPERTY(BlueprintAssignable, Category = "Monster|Attack")

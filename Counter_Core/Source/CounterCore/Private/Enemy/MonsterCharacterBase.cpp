@@ -24,6 +24,36 @@
 #include "Animation/AnimInstance.h"
 #include "Engine/DamageEvents.h"
 #include "Engine/Engine.h"
+#include "Engine/SkeletalMesh.h"
+#include "UObject/ConstructorHelpers.h"
+#include "Enemy/MonsterAnimInstance.h"
+
+namespace
+{
+	// 仕様書 Monster / 攻撃詳細シートで決めた「攻撃 ID → モンタージュ」の対応。
+	// キーは DT_MonsterAttacks の行名（UMonsterAttackComponent が OnPlayAttackAnim で流す AttackId）。
+	struct FMonsterMontageDefault
+	{
+		const TCHAR* Key;
+		const TCHAR* Path;
+	};
+
+	const FMonsterMontageDefault GMonsterAttackMontages[] =
+	{
+		{ TEXT("Attack01"),   TEXT("/Game/MonsterAnimation/AM_Monster/AM_MonsterAttack1.AM_MonsterAttack1") }, // 拳攻撃
+		{ TEXT("Attack02"),   TEXT("/Game/MonsterAnimation/AM_Monster/AM_MonsterAttack2.AM_MonsterAttack2") }, // 斧振り下ろし
+		{ TEXT("Attack03"),   TEXT("/Game/MonsterAnimation/AM_Monster/AM_MonsterAttack3.AM_MonsterAttack3") }, // 斧を右から左へ
+		{ TEXT("Attack04"),   TEXT("/Game/MonsterAnimation/AM_Monster/AM_MonsterAttack4.AM_MonsterAttack4") }, // 振り返り攻撃
+		{ TEXT("Attack05_1"), TEXT("/Game/MonsterAnimation/AM_Monster/AM_MonsterAttack5.AM_MonsterAttack5") }, // 攻撃5 1段目・振り上げ
+		{ TEXT("Attack05_2"), TEXT("/Game/MonsterAnimation/AM_Monster/AM_MonsterAttack6.AM_MonsterAttack6") }, // 攻撃5 2段目・振り下ろし
+	};
+
+	UAnimMontage* LoadMonsterMontage(const TCHAR* Path)
+	{
+		ConstructorHelpers::FObjectFinderOptional<UAnimMontage> Finder(Path);
+		return Finder.Get();
+	}
+}
 
 AMonsterCharacterBase::AMonsterCharacterBase()
 {
@@ -42,6 +72,42 @@ AMonsterCharacterBase::AMonsterCharacterBase()
 
 	WeaponActor = CreateDefaultSubobject<UChildActorComponent>(TEXT("WeaponActor"));
 	WeaponActor->SetupAttachment(GetMesh(), FName("hand_r"));
+
+	// --- 見た目アセットの既定値（/Game/MonsterAnimation）---
+	// 仕様書「モンスター」のモデル・アニメーション。ここで C++ の既定として持たせておき、
+	// BP_Enemy 側で明示的に上書きしていなければこれが使われる（上書き済みなら BP 側が優先）。
+	if (USkeletalMeshComponent* MeshComp = GetMesh())
+	{
+		static ConstructorHelpers::FObjectFinderOptional<USkeletalMesh> MonsterMesh(
+			TEXT("/Game/MonsterAnimation/Model/SM_Monster.SM_Monster"));
+		if (USkeletalMesh* MonsterMeshAsset = MonsterMesh.Get())
+		{
+			MeshComp->SetSkeletalMeshAsset(MonsterMeshAsset);
+		}
+		// Character 既定のメッシュ配置（足を接地・前方 +X 向き）。SM_Monster の原点・スケールで要微調整。
+		MeshComp->SetRelativeLocationAndRotation(FVector(0.f, 0.f, -89.f), FRotator(0.f, -90.f, 0.f));
+		// AnimBlueprint アセット無しで移動ブレンド + モンタージュを成立させるネイティブ AnimInstance。
+		MeshComp->SetAnimInstanceClass(UMonsterAnimInstance::StaticClass());
+	}
+
+	// 攻撃モンタージュ（Attack01〜Attack05）。
+	for (const FMonsterMontageDefault& Entry : GMonsterAttackMontages)
+	{
+		if (UAnimMontage* Montage = LoadMonsterMontage(Entry.Path))
+		{
+			AttackMontages.Add(FName(Entry.Key), Montage);
+		}
+	}
+
+	// リアクションモンタージュ。死亡は bRagdollOnDeath（PhysicsAsset_Monster）に任せるので設定しない。
+	if (UAnimMontage* Damage = LoadMonsterMontage(TEXT("/Game/MonsterAnimation/AM_Monster/AM_MonsterDamage.AM_MonsterDamage")))
+	{
+		ReactionMontages.Add(EMonsterState::Hitstun, Damage); // 仕様: やられ（ガード成功時）
+	}
+	if (UAnimMontage* Stun = LoadMonsterMontage(TEXT("/Game/MonsterAnimation/AM_Monster/AM_MonsterStanIdle.AM_MonsterStanIdle")))
+	{
+		ReactionMontages.Add(EMonsterState::Stun, Stun); // 仕様: スタン 15 秒（ループするダウン姿勢）
+	}
 }
 
 void AMonsterCharacterBase::OnConstruction(const FTransform& Transform)
@@ -57,8 +123,15 @@ void AMonsterCharacterBase::OnConstruction(const FTransform& Transform)
 		}
 		if (GetMesh())
 		{
+			// 付け替え先（親/ソケット）が変わっていなければ再アタッチしない。
+			// 毎回 SnapToTarget で貼り直すと、Details パネルで調整した WeaponActor の
+			// 相対 Transform（握り位置・向き）が OnConstruction のたびに 0 へ戻ってしまう。
+			const bool bNeedsReattach = WeaponActor->GetAttachParent() != GetMesh()
+				|| WeaponActor->GetAttachSocketName() != WeaponSocket;
 			WeaponActor->AttachToComponent(GetMesh(),
-				FAttachmentTransformRules::SnapToTargetNotIncludingScale, WeaponSocket);
+				bNeedsReattach ? FAttachmentTransformRules::SnapToTargetNotIncludingScale
+				               : FAttachmentTransformRules::KeepRelativeTransform,
+				WeaponSocket);
 		}
 	}
 }
@@ -73,6 +146,21 @@ UPrimitiveComponent* AMonsterCharacterBase::ResolveAttackHitbox() const
 		}
 	}
 	return Hitbox;
+}
+
+void AMonsterCharacterBase::UpdateHitboxDebugVisual(bool bActive)
+{
+	if (!ActiveHitbox)
+	{
+		return;
+	}
+	const bool bShow = CounterCoreDebug::IsOnScreenDebugEnabled() && (bAlwaysShowHitbox || bActive);
+	ActiveHitbox->SetHiddenInGame(!bShow);
+	if (UShapeComponent* Shape = Cast<UShapeComponent>(ActiveHitbox))
+	{
+		Shape->ShapeColor = bActive ? HitboxActiveColor : HitboxInactiveColor;
+		Shape->MarkRenderStateDirty();
+	}
 }
 
 int32 AMonsterCharacterBase::CurrentAttackPower() const
@@ -118,6 +206,7 @@ void AMonsterCharacterBase::BeginPlay()
 		Attack->OnAttackFinished.AddDynamic(this, &AMonsterCharacterBase::HandleAttackFinished);
 		Attack->OnToggleHitbox.AddDynamic(this, &AMonsterCharacterBase::HandleToggleHitbox);
 		Attack->OnPlayAttackAnim.AddDynamic(this, &AMonsterCharacterBase::HandlePlayAttackAnim);
+		Attack->OnAttackHitActive.AddDynamic(this, &AMonsterCharacterBase::HandleAttackHitActive);
 	}
 
 	// 武器を生成して手にアタッチ。
@@ -129,8 +218,13 @@ void AMonsterCharacterBase::BeginPlay()
 		}
 		if (GetMesh())
 		{
+			// OnConstruction 同様、既に正しいソケットへアタッチ済みなら相対 Transform を維持する。
+			const bool bNeedsReattach = WeaponActor->GetAttachParent() != GetMesh()
+				|| WeaponActor->GetAttachSocketName() != WeaponSocket;
 			WeaponActor->AttachToComponent(GetMesh(),
-				FAttachmentTransformRules::SnapToTargetNotIncludingScale, WeaponSocket);
+				bNeedsReattach ? FAttachmentTransformRules::SnapToTargetNotIncludingScale
+				               : FAttachmentTransformRules::KeepRelativeTransform,
+				WeaponSocket);
 		}
 	}
 
@@ -152,6 +246,7 @@ void AMonsterCharacterBase::BeginPlay()
 		ActiveHitbox->SetGenerateOverlapEvents(true);
 		ActiveHitbox->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 		ActiveHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		UpdateHitboxDebugVisual(false);
 	}
 
 	if (UCharacterMovementComponent* Move = GetCharacterMovement())
@@ -271,7 +366,7 @@ void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 	if (NewState != EMonsterState::Attack && ActiveHitbox)
 	{
 		ActiveHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		ActiveHitbox->SetHiddenInGame(true);
+		UpdateHitboxDebugVisual(false);
 	}
 
 	State = NewState;
@@ -577,7 +672,7 @@ void AMonsterCharacterBase::HandleToggleHitbox(bool bEnable)
 	{
 		HitActorsThisSwing.Reset();
 		ActiveHitbox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-		ActiveHitbox->SetHiddenInGame(!CounterCoreDebug::IsOnScreenDebugEnabled()); // 判定中のワイヤーフレーム表示
+		UpdateHitboxDebugVisual(true);
 		// 判定ONの瞬間に既に重なっている相手も拾う。
 		TArray<AActor*> Overlapping;
 		ActiveHitbox->GetOverlappingActors(Overlapping, APawn::StaticClass());
@@ -589,14 +684,20 @@ void AMonsterCharacterBase::HandleToggleHitbox(bool bEnable)
 	else
 	{
 		ActiveHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		ActiveHitbox->SetHiddenInGame(true);
+		UpdateHitboxDebugVisual(false);
 		HitActorsThisSwing.Reset();
 	}
 }
 
 void AMonsterCharacterBase::HandlePlayAttackAnim(FName AttackId)
 {
+	// 攻撃開始（予兆の頭）で攻撃モンタージュを再生。
 	PlayAttackMontage(AttackId);
+}
+
+void AMonsterCharacterBase::HandleAttackHitActive(FName AttackId)
+{
+	// 攻撃判定 ON の瞬間に斬撃 VFX。
 	PlayAttackVFX(AttackId);
 }
 
@@ -706,16 +807,33 @@ void AMonsterCharacterBase::DealDamageToTarget(int32 AttackPower)
 
 void AMonsterCharacterBase::PlayAttackMontage_Implementation(FName AttackId)
 {
-	if (TObjectPtr<UAnimMontage>* Found = AttackMontages.Find(AttackId))
+	TObjectPtr<UAnimMontage>* Found = AttackMontages.Find(AttackId);
+	if (!Found || !*Found)
 	{
-		if (UAnimInstance* Anim = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+		return;
+	}
+	UAnimInstance* Anim = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+	if (!Anim)
+	{
+		return;
+	}
+
+	// 仕様書「攻撃詳細」のタイムライン（DT_MonsterAttacks.EndTime）にモンタージュ尺を合わせる。
+	// AM_Monster* は攻撃ウィンドウより長め（例: AM_MonsterAttack5=3.7s / Attack05_1=1.5s）なので、
+	// 等倍で流すと次の一手や硬直に食い込む。再生レートで詰める。
+	float PlayRate = 1.f;
+	if (bScaleAttackMontageToTimeline && Attack)
+	{
+		bool bFound = false;
+		const float TimelineLen = Attack->GetAttackData(AttackId, bFound).EndTime;
+		const float MontageLen = (*Found)->GetPlayLength();
+		if (bFound && TimelineLen > KINDA_SMALL_NUMBER && MontageLen > KINDA_SMALL_NUMBER)
 		{
-			if (*Found)
-			{
-				Anim->Montage_Play(*Found);
-			}
+			PlayRate = FMath::Clamp(MontageLen / TimelineLen,
+				AttackMontageRateRange.X, AttackMontageRateRange.Y);
 		}
 	}
+	Anim->Montage_Play(*Found, PlayRate);
 }
 
 void AMonsterCharacterBase::PlayAttackVFX_Implementation(FName AttackId)
