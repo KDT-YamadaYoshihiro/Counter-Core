@@ -14,6 +14,7 @@
 #include "EngineUtils.h"
 #include "Blueprint/UserWidget.h"
 #include "TimerManager.h"
+#include "Engine/Texture2D.h"
 
 namespace
 {
@@ -130,6 +131,17 @@ void ACounterCoreHUD::DrawLabel(const FString& Text, float X, float Y, const FLi
 	DrawText(Text, Color, X, Y, Font, Scale);
 }
 
+void ACounterCoreHUD::DrawGaugeImage(const FGaugeImageConfig& Cfg, float VW, float VH)
+{
+	if (!Cfg.Texture)
+	{
+		return;
+	}
+	const float X = VW * Cfg.AnchorFraction.X + Cfg.PixelOffset.X;
+	const float Y = VH * Cfg.AnchorFraction.Y + Cfg.PixelOffset.Y;
+	DrawTexture(Cfg.Texture, X, Y, Cfg.Size.X, Cfg.Size.Y, 0.f, 0.f, 1.f, 1.f);
+}
+
 void ACounterCoreHUD::DrawHUD()
 {
 	Super::DrawHUD();
@@ -187,6 +199,7 @@ void ACounterCoreHUD::DrawHUD()
 	// ---- 敵（ボス）HP: 緑バー + 遅延赤バー、画面上部中央 ----
 	if (bShowEnemyHp)
 	{
+		DrawGaugeImage(EnemyHpGaugeImage, VW, VH);
 		if (AActor* Enemy = FindEnemy())
 		{
 			if (UMonsterCombatComponent* EC = Enemy->FindComponentByClass<UMonsterCombatComponent>())
@@ -212,7 +225,7 @@ void ACounterCoreHUD::DrawHUD()
 				DrawBar(BX, BY, BW, 20.f, Frac, EnemyHpDisplayed,
 					FLinearColor(0.15f, 0.85f, 0.2f, 1.f), FLinearColor(0.85f, 0.15f, 0.15f, 0.9f));
 				DrawLabel(FString::Printf(TEXT("BOSS  HP %d / %d"), EC->Status.Hp, EC->Status.MaxHp),
-					BX, BY - 20.f, FLinearColor::White);
+					BX + EnemyHpLabelOffset.X, BY + EnemyHpLabelOffset.Y, FLinearColor::White);
 				// スタンゲージ（おまけ、細く）
 				DrawBar(BX, BY + 24.f, BW, 6.f, EC->GetStunNormalized(), EC->GetStunNormalized(),
 					FLinearColor(0.9f, 0.75f, 0.1f, 1.f), FLinearColor::Transparent);
@@ -228,8 +241,10 @@ void ACounterCoreHUD::DrawHUD()
 	UPlayerGuardComponent* PG = Player->FindComponentByClass<UPlayerGuardComponent>();
 
 	// ---- プレイヤー HP: 緑バー + 遅延赤バー、画面下中央 ----
+	DrawGaugeImage(HealPotionImage, VW, VH);
 	if (bShowPlayerHp && PC)
 	{
+		DrawGaugeImage(PlayerHpGaugeImage, VW, VH);
 		const float Frac = PC->GetHpNormalized();
 		if (PlayerHpDisplayed < 0.f) { PlayerHpDisplayed = Frac; }
 		PlayerHpDisplayed = (Frac < PlayerHpDisplayed)
@@ -241,12 +256,14 @@ void ACounterCoreHUD::DrawHUD()
 		const float BY = VH - 52.f;
 		DrawBar(BX, BY, BW, 18.f, Frac, PlayerHpDisplayed,
 			FLinearColor(0.2f, 0.85f, 0.25f, 1.f), FLinearColor(0.85f, 0.15f, 0.15f, 0.9f));
-		DrawLabel(FString::Printf(TEXT("HP %d / %d"), PC->Hp, PC->MaxHp), BX, BY - 18.f, FLinearColor::White);
+		DrawLabel(FString::Printf(TEXT("HP %d / %d"), PC->Hp, PC->MaxHp),
+			BX + PlayerHpLabelOffset.X, BY + PlayerHpLabelOffset.Y, FLinearColor::White);
 	}
 
 	// ---- プレイヤー攻撃ゲージ: 10 枠、画面下中央 ----
 	if (bShowPlayerGauge && PC)
 	{
+		DrawGaugeImage(PlayerGaugeImage, VW, VH);
 		const int32 Max = FMath::Max(1, PC->MaxGauge);
 		const float SegW = 26.f, SegH = 16.f, Gap = 3.f;
 		const float TotalW = Max * SegW + (Max - 1) * Gap;
@@ -262,7 +279,7 @@ void ACounterCoreHUD::DrawHUD()
 			DrawRect(Col, GX + i * (SegW + Gap), GY, SegW, SegH);
 		}
 		DrawLabel(FString::Printf(TEXT("GAUGE %d / %d%s"), PC->Gauge, Max, PC->bRushActive ? TEXT("  RUSH!") : TEXT("")),
-			GX, GY - 20.f, FLinearColor(0.8f, 0.9f, 1.f));
+			GX + PlayerGaugeLabelOffset.X, GY + PlayerGaugeLabelOffset.Y, FLinearColor(0.8f, 0.9f, 1.f));
 	}
 
 	// ---- ガード: 文字 + 盾ゲージ + ガード残り時間（サークルの代用バー）----
@@ -281,12 +298,12 @@ void ACounterCoreHUD::DrawHUD()
 		}
 		LY += 26.f;
 		DrawLabel(FString::Printf(TEXT("盾 %d / %d"), FMath::RoundToInt(PG->ShieldDurability),
-			FMath::RoundToInt(PG->MaxShieldDurability)), LX, LY, FLinearColor::White);
+			FMath::RoundToInt(PG->MaxShieldDurability)), LX + ShieldLabelOffset.X, LY + ShieldLabelOffset.Y, FLinearColor::White);
 		LY += 18.f;
 		DrawBar(LX, LY, 220.f, 14.f, PG->GetShieldNormalized(), PG->GetShieldNormalized(),
 			FLinearColor(0.3f, 0.55f, 1.f, 1.f), FLinearColor::Transparent);
 		LY += 22.f;
-		DrawLabel(TEXT("ガード可能時間"), LX, LY, FLinearColor(0.7f, 0.7f, 0.7f), 0.9f);
+		DrawLabel(TEXT("ガード可能時間"), LX + GuardTimeLabelOffset.X, LY + GuardTimeLabelOffset.Y, FLinearColor(0.7f, 0.7f, 0.7f), 0.9f);
 		LY += 16.f;
 		DrawBar(LX, LY, 220.f, 10.f, PG->GetGuardTimeNormalized(), PG->GetGuardTimeNormalized(),
 			FLinearColor(0.9f, 0.85f, 0.3f, 1.f), FLinearColor::Transparent);
