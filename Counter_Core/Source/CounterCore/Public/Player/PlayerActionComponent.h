@@ -56,7 +56,7 @@ public:
 
 	/** 武器 / 近接判定ボックスをアタッチするメッシュのソケット / ボーン名。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack")
-	FName WeaponSocket = FName("hand_r");
+	FName WeaponSocket = FName(TEXT("剣追加用ソケット"));
 
 	/** 近接判定ボックスの半径（extent）。武器の見た目とは独立に、確実に当てるための固定サイズ。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack")

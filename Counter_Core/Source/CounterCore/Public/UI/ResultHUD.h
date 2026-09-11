@@ -59,7 +59,7 @@ public:
 	bool bRemoveLegacyResultWidget = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Result|HUD")
-	TArray<FString> LegacyWidgetNameContains = { TEXT("ClearResult"), TEXT("Result") };
+	TArray<FString> LegacyWidgetNameContains = { TEXT("ClearResult"), TEXT("Result"), TEXT("Gauge") };
 
 private:
 	UBattleResultSubsystem* GetResultSys() const;
