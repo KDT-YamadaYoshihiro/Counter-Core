@@ -40,10 +40,15 @@ struct FMonsterAnimInstanceProxy : public FAnimInstanceProxy
 	virtual FAnimNode_Base* GetCustomRootNode() override { return &SlotNode; }
 
 private:
-	FAnimNode_SequencePlayer IdlePlayer;
-	FAnimNode_SequencePlayer RunPlayer;
-	FAnimNode_TwoWayBlend    LocomotionBlend;
-	FAnimNode_Slot           SlotNode;
+	// AnimBP を介さず C++ で直接持つノードは _Standalone 版でなければならない。
+	// 通常の FAnimNode_SequencePlayer は PlayRate/bLoopAnimation 等が meta=(FoldProperty) で
+	// AnimBlueprintGeneratedClass 側に畳み込まれており、アクセサが NodeData を要求する。
+	// AnimBP を持たない本クラスでは NodeData が常に null のため、クック版で check(NodeData) に落ちる
+	// （エディタはプロパティ直読みにフォールバックするので再現しない）。
+	FAnimNode_SequencePlayer_Standalone IdlePlayer;
+	FAnimNode_SequencePlayer_Standalone RunPlayer;
+	FAnimNode_TwoWayBlend               LocomotionBlend;
+	FAnimNode_Slot                      SlotNode;
 
 	float BlendAlpha = 0.f; // 0=Idle, 1=Run（補間後）
 };
