@@ -67,6 +67,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD", meta = (ClampMin = "0.01"))
 	float DelayBarCatchupPerSec = 0.35f;
 
+	/** レイアウトを調整した基準解像度。
+	 * Canvas 描画は生ピクセル、UMG は DPI スケール済みなので、そのままだと解像度ごとにズレる。
+	 * この解像度での DPI スケールとの比を全ピクセル値に掛けて UMG と歩調を合わせる
+	 * （＝この解像度では倍率 1.0 で、調整済みの見た目が変わらない）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD")
+	FIntPoint DesignResolution = FIntPoint(1280, 720);
+
 	/** 各数値ラベルの表示位置（対応するバーの基準位置からのピクセルオフセット）。
 	 * WBP 側に置いたゲージ画像と文字が被る場合はここで調整する（再ビルド不要）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Label Offset")
@@ -99,6 +106,9 @@ private:
 	void DrawInGameMenu(class UBattleDirectorComponent* BD, float VW, float VH);
 
 	void SweepLegacyWidgets();
+
+	/** DesignResolution 基準の描画倍率。DrawHUD の先頭で毎フレーム更新する。 */
+	float UIScale = 1.f;
 
 	float EnemyHpDisplayed = -1.f;
 	float PlayerHpDisplayed = -1.f;

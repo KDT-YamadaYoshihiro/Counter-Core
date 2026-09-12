@@ -1,10 +1,13 @@
 #include "Title/TitleHUD.h"
 #include "Title/TitleSceneController.h"
 
+#include "CounterCoreDebug.h"
+
 #include "Engine/Canvas.h"
 #include "CanvasItem.h"
 #include "Engine/Engine.h"
 #include "Engine/Font.h"
+#include "Engine/UserInterfaceSettings.h"
 #include "EngineUtils.h"
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
@@ -61,8 +64,8 @@ void ATitleHUD::DrawStr(const FString& Text, float X, float Y, int32 PixelSize, 
 void ATitleHUD::BeginPlay()
 {
 	Super::BeginPlay();
-	UE_LOG(LogTemp, Warning, TEXT("[TitleHUD] BeginPlay"));
-	if (GEngine)
+	UE_LOG(LogTemp, Log, TEXT("[TitleHUD] BeginPlay"));
+	if (GEngine && CounterCoreDebug::IsOnScreenDebugEnabled())
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 12.f, FColor::Green, TEXT("[TitleHUD] spawned"));
 	}
@@ -77,7 +80,7 @@ void ATitleHUD::DrawHUD()
 	}
 
 #if !UE_BUILD_SHIPPING
-	if (GEngine)
+	if (GEngine && CounterCoreDebug::IsOnScreenDebugEnabled())
 	{
 		GEngine->AddOnScreenDebugMessage(9911, 0.2f, FColor::Yellow, TEXT("[TitleHUD] DrawHUD"));
 	}
@@ -85,18 +88,30 @@ void ATitleHUD::DrawHUD()
 
 	const float VW = Canvas->SizeX;
 	const float VH = Canvas->SizeY;
+
+	// WBP_Title は DPI スケールで拡大されるが Canvas 描画は生ピクセルなので、
+	// 基準解像度での DPI スケールとの比を掛けて拡大率を揃える。
+	{
+		const UUserInterfaceSettings* UISettings = GetDefault<UUserInterfaceSettings>();
+		const float RefDPI = UISettings->GetDPIScaleBasedOnSize(DesignResolution);
+		UIScale = (RefDPI > KINDA_SMALL_NUMBER)
+			? UISettings->GetDPIScaleBasedOnSize(FIntPoint(FMath::RoundToInt(VW), FMath::RoundToInt(VH))) / RefDPI
+			: 1.f;
+	}
+	const float S = UIScale;
+
 	ATitleSceneController* Ctl = GetController();
 	const bool bPrompt = Ctl && Ctl->IsQuitPromptOpen();
 
 	// ☰ アイコン（左上）
 	{
-		const float IX = 24.f, IY = 22.f, IW = 44.f, IH = 38.f;
+		const float IX = 24.f * S, IY = 22.f * S, IW = 44.f * S, IH = 38.f * S;
 		DrawRect(FLinearColor(0.f, 0.f, 0.f, bPrompt ? 0.85f : 0.6f), IX, IY, IW, IH);
 		for (int32 i = 0; i < 3; ++i)
 		{
-			DrawRect(FLinearColor::White, IX + 9.f, IY + 9.f + i * 10.f, IW - 18.f, 4.f);
+			DrawRect(FLinearColor::White, IX + 9.f * S, IY + (9.f + i * 10.f) * S, IW - 18.f * S, 4.f * S);
 		}
-		DrawStr(TEXT("Esc / Start : ゲーム終了"), IX + IW + 12.f, IY + 6.f,
+		DrawStr(TEXT("Esc / Start : ゲーム終了"), IX + IW + 12.f * S, IY + 6.f * S,
 			FMath::Max(14, FMath::RoundToInt(VH * 0.026f)), FLinearColor(0.9f, 0.9f, 0.95f, 0.95f), false);
 	}
 

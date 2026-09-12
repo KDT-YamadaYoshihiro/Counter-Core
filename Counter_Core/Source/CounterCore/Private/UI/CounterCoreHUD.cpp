@@ -7,6 +7,7 @@
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "Engine/Font.h"
+#include "Engine/UserInterfaceSettings.h"
 #include "CanvasItem.h"
 #include "Misc/App.h"
 #include "GameFramework/Pawn.h"
@@ -100,7 +101,8 @@ void ACounterCoreHUD::DrawBar(float X, float Y, float W, float H, float FillFrac
 	FillFrac = FMath::Clamp(FillFrac, 0.f, 1.f);
 	DelayFrac = FMath::Clamp(DelayFrac, FillFrac, 1.f);
 	// 背景
-	DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.6f), X - 2, Y - 2, W + 4, H + 4);
+	const float M = 2.f * UIScale;
+	DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.6f), X - M, Y - M, W + M * 2.f, H + M * 2.f);
 	DrawRect(FLinearColor(0.12f, 0.12f, 0.12f, 0.9f), X, Y, W, H);
 	// 遅延ダメージ（赤）
 	if (DelayFrac > FillFrac)
@@ -117,7 +119,7 @@ void ACounterCoreHUD::DrawLabel(const FString& Text, float X, float Y, const FLi
 	// （ビットマップフォントの拡大ボケを避ける）。
 	if (UFont* UIFont = HudUIFont())
 	{
-		const int32 Px = FMath::Max(6, FMath::RoundToInt(18.f * Scale));
+		const int32 Px = FMath::Max(6, FMath::RoundToInt(18.f * Scale * UIScale));
 		FCanvasTextItem Item(FVector2D(X, Y), FText::FromString(Text),
 			FSlateFontInfo(UIFont, Px), Color);
 		Item.EnableShadow(FLinearColor(0.f, 0.f, 0.f, 0.8f));
@@ -128,7 +130,7 @@ void ACounterCoreHUD::DrawLabel(const FString& Text, float X, float Y, const FLi
 		}
 	}
 	UFont* Font = GEngine ? GEngine->GetMediumFont() : nullptr;
-	DrawText(Text, Color, X, Y, Font, Scale);
+	DrawText(Text, Color, X, Y, Font, Scale * UIScale);
 }
 
 void ACounterCoreHUD::DrawGaugeImage(const FGaugeImageConfig& Cfg, float VW, float VH)
@@ -137,9 +139,11 @@ void ACounterCoreHUD::DrawGaugeImage(const FGaugeImageConfig& Cfg, float VW, flo
 	{
 		return;
 	}
-	const float X = VW * Cfg.AnchorFraction.X + Cfg.PixelOffset.X;
-	const float Y = VH * Cfg.AnchorFraction.Y + Cfg.PixelOffset.Y;
-	DrawTexture(Cfg.Texture, X, Y, Cfg.Size.X, Cfg.Size.Y, 0.f, 0.f, 1.f, 1.f);
+	// オフセットとサイズは基準解像度でのピクセル値なので、必ず UIScale を通す。
+	// （アンカーだけ画面比率、サイズは生ピクセルという混在が解像度ごとのズレの原因だった。）
+	const float X = VW * Cfg.AnchorFraction.X + Cfg.PixelOffset.X * UIScale;
+	const float Y = VH * Cfg.AnchorFraction.Y + Cfg.PixelOffset.Y * UIScale;
+	DrawTexture(Cfg.Texture, X, Y, Cfg.Size.X * UIScale, Cfg.Size.Y * UIScale, 0.f, 0.f, 1.f, 1.f);
 }
 
 void ACounterCoreHUD::DrawHUD()
@@ -154,17 +158,28 @@ void ACounterCoreHUD::DrawHUD()
 	const float VH = Canvas->SizeY;
 	const float Dt = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.f;
 
+	// UMG は DPI スケールで拡大されるが Canvas 描画は生ピクセルなので、
+	// 基準解像度での DPI スケールとの比を全ピクセル値に掛けて歩調を合わせる。
+	{
+		const UUserInterfaceSettings* UISettings = GetDefault<UUserInterfaceSettings>();
+		const float RefDPI = UISettings->GetDPIScaleBasedOnSize(DesignResolution);
+		UIScale = (RefDPI > KINDA_SMALL_NUMBER)
+			? UISettings->GetDPIScaleBasedOnSize(FIntPoint(FMath::RoundToInt(VW), FMath::RoundToInt(VH))) / RefDPI
+			: 1.f;
+	}
+	const float S = UIScale;
+
 	APawn* Player = UGameplayStatics::GetPlayerPawn(this, 0);
 	UBattleDirectorComponent* BD = Player ? Player->FindComponentByClass<UBattleDirectorComponent>() : nullptr;
 
 	// ---- メニューアイコン（☰）: 画面左上（仕様書 UI「メニュー」）----
 	if (BD && !BD->IsIntroPlaying() && BD->GetResult() == EBattleResult::InProgress)
 	{
-		const float IX = 20.f, IY = 18.f, IW = 34.f, IH = 30.f;
+		const float IX = 20.f * S, IY = 18.f * S, IW = 34.f * S, IH = 30.f * S;
 		DrawRect(FLinearColor(0.f, 0.f, 0.f, BD->IsMenuOpen() ? 0.75f : 0.45f), IX, IY, IW, IH);
 		for (int32 i = 0; i < 3; ++i)
 		{
-			DrawRect(FLinearColor::White, IX + 7.f, IY + 7.f + i * 8.f, IW - 14.f, 3.f);
+			DrawRect(FLinearColor::White, IX + 7.f * S, IY + (7.f + i * 8.f) * S, IW - 14.f * S, 3.f * S);
 		}
 	}
 
@@ -174,7 +189,7 @@ void ACounterCoreHUD::DrawHUD()
 		const float T = BD->GetElapsedTime();
 		const int32 Min = FMath::FloorToInt(T / 60.f);
 		const float Sec = T - Min * 60.f;
-		DrawLabel(FString::Printf(TEXT("%02d:%05.2f"), Min, Sec), 62.f, 22.f, FLinearColor::White, 1.1f);
+		DrawLabel(FString::Printf(TEXT("%02d:%05.2f"), Min, Sec), 62.f * S, 22.f * S, FLinearColor::White, 1.1f);
 	}
 
 	// ---- ラッシュ中の画面ティント ----
@@ -185,7 +200,7 @@ void ACounterCoreHUD::DrawHUD()
 			if (RPC->bRushActive)
 			{
 				DrawRect(FLinearColor(1.f, 0.45f, 0.05f, 0.10f), 0.f, 0.f, VW, VH);
-				DrawLabel(TEXT("R U S H"), (VW * 0.5f) - 70.f, 90.f, FLinearColor(1.f, 0.7f, 0.2f), 2.0f);
+				DrawLabel(TEXT("R U S H"), (VW * 0.5f) - 70.f * S, 90.f * S, FLinearColor(1.f, 0.7f, 0.2f), 2.0f);
 			}
 		}
 	}
@@ -193,7 +208,7 @@ void ACounterCoreHUD::DrawHUD()
 	// ---- 開始演出 ----
 	if (BD && BD->IsIntroPlaying())
 	{
-		DrawLabel(TEXT("READY..."), (VW * 0.5f) - 90.f, VH * 0.35f, FLinearColor(1.f, 1.f, 1.f), 2.6f);
+		DrawLabel(TEXT("READY..."), (VW * 0.5f) - 90.f * S, VH * 0.35f, FLinearColor(1.f, 1.f, 1.f), 2.6f);
 	}
 
 	// ---- 敵（ボス）HP: 緑バー + 遅延赤バー、画面上部中央 ----
@@ -219,15 +234,15 @@ void ACounterCoreHUD::DrawHUD()
 					EnemyHpDisplayed = Frac;
 				}
 
-				const float BW = FMath::Min(760.f, VW * 0.6f);
+				const float BW = FMath::Min(760.f * S, VW * 0.6f);
 				const float BX = (VW - BW) * 0.5f;
-				const float BY = 46.f;
-				DrawBar(BX, BY, BW, 20.f, Frac, EnemyHpDisplayed,
+				const float BY = 46.f * S;
+				DrawBar(BX, BY, BW, 20.f * S, Frac, EnemyHpDisplayed,
 					FLinearColor(0.15f, 0.85f, 0.2f, 1.f), FLinearColor(0.85f, 0.15f, 0.15f, 0.9f));
 				DrawLabel(FString::Printf(TEXT("BOSS  HP %d / %d"), EC->Status.Hp, EC->Status.MaxHp),
-					BX + EnemyHpLabelOffset.X, BY + EnemyHpLabelOffset.Y, FLinearColor::White);
+					BX + EnemyHpLabelOffset.X * S, BY + EnemyHpLabelOffset.Y * S, FLinearColor::White);
 				// スタンゲージ（おまけ、細く）
-				DrawBar(BX, BY + 24.f, BW, 6.f, EC->GetStunNormalized(), EC->GetStunNormalized(),
+				DrawBar(BX, BY + 24.f * S, BW, 6.f * S, EC->GetStunNormalized(), EC->GetStunNormalized(),
 					FLinearColor(0.9f, 0.75f, 0.1f, 1.f), FLinearColor::Transparent);
 			}
 		}
@@ -251,13 +266,13 @@ void ACounterCoreHUD::DrawHUD()
 			? FMath::Max(Frac, PlayerHpDisplayed - DelayBarCatchupPerSec * Dt)
 			: Frac;
 
-		const float BW = FMath::Min(560.f, VW * 0.44f);
+		const float BW = FMath::Min(560.f * S, VW * 0.44f);
 		const float BX = (VW - BW) * 0.5f;
-		const float BY = VH - 52.f;
-		DrawBar(BX, BY, BW, 18.f, Frac, PlayerHpDisplayed,
+		const float BY = VH - 52.f * S;
+		DrawBar(BX, BY, BW, 18.f * S, Frac, PlayerHpDisplayed,
 			FLinearColor(0.2f, 0.85f, 0.25f, 1.f), FLinearColor(0.85f, 0.15f, 0.15f, 0.9f));
 		DrawLabel(FString::Printf(TEXT("HP %d / %d"), PC->Hp, PC->MaxHp),
-			BX + PlayerHpLabelOffset.X, BY + PlayerHpLabelOffset.Y, FLinearColor::White);
+			BX + PlayerHpLabelOffset.X * S, BY + PlayerHpLabelOffset.Y * S, FLinearColor::White);
 	}
 
 	// ---- プレイヤー攻撃ゲージ: 10 枠、画面下中央 ----
@@ -265,11 +280,11 @@ void ACounterCoreHUD::DrawHUD()
 	{
 		DrawGaugeImage(PlayerGaugeImage, VW, VH);
 		const int32 Max = FMath::Max(1, PC->MaxGauge);
-		const float SegW = 26.f, SegH = 16.f, Gap = 3.f;
+		const float SegW = 26.f * S, SegH = 16.f * S, Gap = 3.f * S;
 		const float TotalW = Max * SegW + (Max - 1) * Gap;
 		const float GX = (VW - TotalW) * 0.5f;
-		const float GY = VH - 116.f;
-		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.55f), GX - 6, GY - 6, TotalW + 12, SegH + 12);
+		const float GY = VH - 116.f * S;
+		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.55f), GX - 6.f * S, GY - 6.f * S, TotalW + 12.f * S, SegH + 12.f * S);
 		for (int32 i = 0; i < Max; ++i)
 		{
 			const bool bFilled = i < PC->Gauge;
@@ -279,14 +294,14 @@ void ACounterCoreHUD::DrawHUD()
 			DrawRect(Col, GX + i * (SegW + Gap), GY, SegW, SegH);
 		}
 		DrawLabel(FString::Printf(TEXT("GAUGE %d / %d%s"), PC->Gauge, Max, PC->bRushActive ? TEXT("  RUSH!") : TEXT("")),
-			GX + PlayerGaugeLabelOffset.X, GY + PlayerGaugeLabelOffset.Y, FLinearColor(0.8f, 0.9f, 1.f));
+			GX + PlayerGaugeLabelOffset.X * S, GY + PlayerGaugeLabelOffset.Y * S, FLinearColor(0.8f, 0.9f, 1.f));
 	}
 
 	// ---- ガード: 文字 + 盾ゲージ + ガード残り時間（サークルの代用バー）----
 	if (bShowGuard && PG)
 	{
-		const float LX = 48.f;
-		float LY = VH * 0.5f - 40.f;
+		const float LX = 48.f * S;
+		float LY = VH * 0.5f - 40.f * S;
 
 		if (PG->IsGuarding())
 		{
@@ -296,23 +311,23 @@ void ACounterCoreHUD::DrawHUD()
 		{
 			DrawLabel(TEXT("ガード クールタイム"), LX, LY, FLinearColor(1.f, 0.5f, 0.3f));
 		}
-		LY += 26.f;
+		LY += 26.f * S;
 		DrawLabel(FString::Printf(TEXT("盾 %d / %d"), FMath::RoundToInt(PG->ShieldDurability),
-			FMath::RoundToInt(PG->MaxShieldDurability)), LX + ShieldLabelOffset.X, LY + ShieldLabelOffset.Y, FLinearColor::White);
-		LY += 18.f;
-		DrawBar(LX, LY, 220.f, 14.f, PG->GetShieldNormalized(), PG->GetShieldNormalized(),
+			FMath::RoundToInt(PG->MaxShieldDurability)), LX + ShieldLabelOffset.X * S, LY + ShieldLabelOffset.Y * S, FLinearColor::White);
+		LY += 18.f * S;
+		DrawBar(LX, LY, 220.f * S, 14.f * S, PG->GetShieldNormalized(), PG->GetShieldNormalized(),
 			FLinearColor(0.3f, 0.55f, 1.f, 1.f), FLinearColor::Transparent);
-		LY += 22.f;
-		DrawLabel(TEXT("ガード可能時間"), LX + GuardTimeLabelOffset.X, LY + GuardTimeLabelOffset.Y, FLinearColor(0.7f, 0.7f, 0.7f), 0.9f);
-		LY += 16.f;
-		DrawBar(LX, LY, 220.f, 10.f, PG->GetGuardTimeNormalized(), PG->GetGuardTimeNormalized(),
+		LY += 22.f * S;
+		DrawLabel(TEXT("ガード可能時間"), LX + GuardTimeLabelOffset.X * S, LY + GuardTimeLabelOffset.Y * S, FLinearColor(0.7f, 0.7f, 0.7f), 0.9f);
+		LY += 16.f * S;
+		DrawBar(LX, LY, 220.f * S, 10.f * S, PG->GetGuardTimeNormalized(), PG->GetGuardTimeNormalized(),
 			FLinearColor(0.9f, 0.85f, 0.3f, 1.f), FLinearColor::Transparent);
 	}
 
 	// ---- プレイヤー状態フラグ（気絶などが分かるように）----
 	if (PC && PC->GetCombatState() == EPlayerCombatState::Stun)
 	{
-		DrawLabel(TEXT("気絶！"), (VW * 0.5f) - 40.f, VH * 0.5f, FLinearColor(1.f, 0.3f, 0.3f), 1.6f);
+		DrawLabel(TEXT("気絶！"), (VW * 0.5f) - 40.f * S, VH * 0.5f, FLinearColor(1.f, 0.3f, 0.3f), 1.6f);
 	}
 
 	// ---- ジャストガード フラッシュ ----
@@ -322,7 +337,7 @@ void ACounterCoreHUD::DrawHUD()
 		if (Since >= 0.f && Since < 0.8f)
 		{
 			const float A = FMath::Clamp(1.f - Since / 0.8f, 0.f, 1.f);
-			DrawLabel(TEXT("JUST GUARD!"), (VW * 0.5f) - 90.f, VH * 0.38f, FLinearColor(0.4f, 0.9f, 1.f, A), 1.8f);
+			DrawLabel(TEXT("JUST GUARD!"), (VW * 0.5f) - 90.f * S, VH * 0.38f, FLinearColor(0.4f, 0.9f, 1.f, A), 1.8f);
 		}
 	}
 
@@ -339,16 +354,16 @@ void ACounterCoreHUD::DrawHUD()
 			{
 				const FLinearColor Col(0.9f, 0.95f, 1.f, 0.9f);
 				// 点
-				DrawRect(Col, Screen.X - 3.f, Screen.Y - 3.f, 6.f, 6.f);
+				DrawRect(Col, Screen.X - 3.f * S, Screen.Y - 3.f * S, 6.f * S, 6.f * S);
 				// 円（線分で近似）
 				const int32 Seg = 24;
-				const float R = 26.f;
+				const float R = 26.f * S;
 				for (int32 i = 0; i < Seg; ++i)
 				{
 					const float A0 = (2.f * PI * i) / Seg;
 					const float A1 = (2.f * PI * (i + 1)) / Seg;
 					DrawLine(Screen.X + R * FMath::Cos(A0), Screen.Y + R * FMath::Sin(A0),
-						Screen.X + R * FMath::Cos(A1), Screen.Y + R * FMath::Sin(A1), Col, 1.5f);
+						Screen.X + R * FMath::Cos(A1), Screen.Y + R * FMath::Sin(A1), Col, 1.5f * S);
 				}
 			}
 		}
@@ -360,11 +375,11 @@ void ACounterCoreHUD::DrawHUD()
 		const EBattleResult R = BD->GetResult();
 		if (R == EBattleResult::PlayerWin)
 		{
-			DrawLabel(TEXT("YOU WIN"), (VW * 0.5f) - 110.f, VH * 0.42f, FLinearColor(1.f, 0.9f, 0.3f), 3.0f);
+			DrawLabel(TEXT("YOU WIN"), (VW * 0.5f) - 110.f * S, VH * 0.42f, FLinearColor(1.f, 0.9f, 0.3f), 3.0f);
 		}
 		else if (R == EBattleResult::PlayerLose)
 		{
-			DrawLabel(TEXT("YOU LOSE"), (VW * 0.5f) - 120.f, VH * 0.42f, FLinearColor(1.f, 0.3f, 0.3f), 3.0f);
+			DrawLabel(TEXT("YOU LOSE"), (VW * 0.5f) - 120.f * S, VH * 0.42f, FLinearColor(1.f, 0.3f, 0.3f), 3.0f);
 		}
 	}
 
@@ -378,16 +393,17 @@ void ACounterCoreHUD::DrawHUD()
 void ACounterCoreHUD::DrawInGameMenu(UBattleDirectorComponent* BD, float VW, float VH)
 {
 	const double RT = FApp::GetCurrentTime(); // 実時間（メニュー中は時間停止のため）
+	const float S = UIScale;
 
 	// パネル（画面左）
 	const float PW = VW * 0.36f;
 	DrawRect(FLinearColor(0.02f, 0.03f, 0.05f, 0.82f), 0.f, 0.f, PW, VH);
-	DrawRect(FLinearColor(0.8f, 0.85f, 0.95f, 0.9f), PW - 3.f, 0.f, 3.f, VH);
+	DrawRect(FLinearColor(0.8f, 0.85f, 0.95f, 0.9f), PW - 3.f * S, 0.f, 3.f * S, VH);
 
-	DrawLabel(TEXT("メニュー"), 40.f, VH * 0.13f, FLinearColor::White, 1.9f);
+	DrawLabel(TEXT("メニュー"), 40.f * S, VH * 0.13f, FLinearColor::White, 1.9f);
 
 	const TCHAR* Items[3] = { TEXT("続ける"), TEXT("操作説明"), TEXT("あきらめる") };
-	const float BaseX = 70.f;
+	const float BaseX = 70.f * S;
 	const float StartY = VH * 0.26f;
 	const float StepY = VH * 0.11f;
 	const int32 Sel = BD->GetMenuSelection();
@@ -397,14 +413,14 @@ void ACounterCoreHUD::DrawInGameMenu(UBattleDirectorComponent* BD, float VW, flo
 		const bool bS = (i == Sel);
 		const float ItemY = StartY + StepY * i;
 		// 選択項目は文字が矢印方向（右）へ寄る。非選択は定位置。
-		const float TextX = bS ? BaseX + 44.f : BaseX;
+		const float TextX = bS ? BaseX + 44.f * S : BaseX;
 		DrawLabel(Items[i], TextX, ItemY, bS ? FLinearColor(1.f, 0.95f, 0.6f) : FLinearColor(0.7f, 0.72f, 0.78f), bS ? 1.7f : 1.4f);
 
 		if (bS)
 		{
 			// ◀ 印: 左右に揺れ続ける
-			const float Sway = FMath::Sin((float)RT * 6.f) * 10.f;
-			DrawLabel(TEXT("<"), TextX + 150.f + Sway, ItemY, FLinearColor(1.f, 0.25f, 0.25f), 1.9f);
+			const float Sway = FMath::Sin((float)RT * 6.f) * 10.f * S;
+			DrawLabel(TEXT("<"), TextX + 150.f * S + Sway, ItemY, FLinearColor(1.f, 0.25f, 0.25f), 1.9f);
 		}
 	}
 
@@ -413,7 +429,7 @@ void ACounterCoreHUD::DrawInGameMenu(UBattleDirectorComponent* BD, float VW, flo
 	{
 		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.7f), 0.f, 0.f, VW, VH);
 		const float CX = VW * 0.5f;
-		DrawLabel(TEXT("操作説明"), CX - 70.f, VH * 0.12f, FLinearColor::White, 2.0f);
+		DrawLabel(TEXT("操作説明"), CX - 70.f * S, VH * 0.12f, FLinearColor::White, 2.0f);
 		const TCHAR* Lines[] = {
 			TEXT("移動        : 左スティック / WASD"),
 			TEXT("視点        : 右スティック / マウス"),
@@ -427,7 +443,7 @@ void ACounterCoreHUD::DrawInGameMenu(UBattleDirectorComponent* BD, float VW, flo
 		{
 			DrawLabel(Lines[i], VW * 0.22f, VH * 0.25f + i * (VH * 0.07f), FLinearColor(0.9f, 0.9f, 0.92f), 1.2f);
 		}
-		DrawLabel(TEXT("戻る: Esc / B"), CX - 70.f, VH * 0.9f, FLinearColor(0.6f, 0.6f, 0.65f), 1.1f);
+		DrawLabel(TEXT("戻る: Esc / B"), CX - 70.f * S, VH * 0.9f, FLinearColor(0.6f, 0.6f, 0.65f), 1.1f);
 		return;
 	}
 
@@ -437,7 +453,7 @@ void ACounterCoreHUD::DrawInGameMenu(UBattleDirectorComponent* BD, float VW, flo
 		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.6f), 0.f, 0.f, VW, VH);
 		const float BW = VW * 0.44f, BH = VH * 0.22f;
 		DrawRect(FLinearColor(0.1f, 0.1f, 0.13f, 0.96f), (VW - BW) * 0.5f, (VH - BH) * 0.5f, BW, BH);
-		DrawLabel(TEXT("あきらめますか？"), VW * 0.5f - 130.f, VH * 0.44f, FLinearColor::White, 1.6f);
+		DrawLabel(TEXT("あきらめますか？"), VW * 0.5f - 130.f * S, VH * 0.44f, FLinearColor::White, 1.6f);
 		const bool bY = BD->IsMenuDialogYes();
 		DrawLabel(bY ? TEXT("＞ はい") : TEXT("  はい"), VW * 0.40f, VH * 0.54f,
 			bY ? FLinearColor(1.f, 0.9f, 0.f) : FLinearColor::White, 1.4f);
