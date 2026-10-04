@@ -63,6 +63,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|FX", meta = (ClampMin = "0", ClampMax = "2"))
 	float CameraShakeScale = 0.3f;
 
+	/** 被弾時の演出（SE / VFX）。PG-18。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|FX")
+	FCombatFeedback DamagedFeedback;
+
+	// --- 死亡（PG-04）---
+
+	/** 死亡時の演出（SE / VFX）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Death")
+	FCombatFeedback DeathFeedback;
+
+	/** 死亡時にカプセルへ適用する Collision プロファイル名（None = 変更しない）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Death")
+	FName DeathCollisionProfile = NAME_None;
+
+	/** 死亡時に CharacterMovement を停止する。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Death")
+	bool bDisableMovementOnDeath = true;
+
 	// --- 攻撃ゲージ（仕様書 Player「攻撃」/ UI「攻撃ゲージ」）---
 
 	/** 最大攻撃ゲージ（枠）。仕様: 10 枠。 */
@@ -105,7 +123,10 @@ public:
 	EPlayerCombatState GetCombatState() const { return State; }
 
 	UFUNCTION(BlueprintPure, Category = "Player|Status")
-	bool IsAlive() const { return Hp > 0; }
+	bool IsAlive() const { return Hp > 0 && State != EPlayerCombatState::Dead; }
+
+	UFUNCTION(BlueprintPure, Category = "Player|Status")
+	bool IsDead() const { return State == EPlayerCombatState::Dead; }
 
 	UFUNCTION(BlueprintPure, Category = "Player|Status")
 	bool IsInvulnerable() const { return bInvulnerable || InvulnTimer > 0.f; }
@@ -185,6 +206,7 @@ private:
 	void EndStun();
 	void EndHitReact();
 	void PlayMontage(UAnimMontage* Montage) const;
+	void EnterDeath();
 	void PlayDamagedShake() const;
 
 	EPlayerCombatState State = EPlayerCombatState::Normal;

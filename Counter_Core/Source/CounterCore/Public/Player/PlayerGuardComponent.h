@@ -2,9 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Common/CombatFeedbackTypes.h"
 #include "PlayerGuardComponent.generated.h"
 
 class UPlayerCombatComponent;
+class UAnimMontage;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPlayerGuardStateChanged, bool, bGuarding);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPlayerShieldChanged, float, Durability, float, MaxDurability);
@@ -54,9 +56,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Guard", meta = (ClampMin = "0"))
 	float StunDuration = 10.f;
 
-	/** ガード成功時のヒットストップ実時間（秒）。0 で無効。 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Guard", meta = (ClampMin = "0"))
-	float GuardHitStopDuration = 0.09f;
+	/** ガード成功時のヒットストップ（PG-06 / PG-19）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Guard")
+	FHitStopSettings GuardHitStop;
+
+	/** ガード成功時に 1 回再生する Montage（PG-06）。未設定なら再生しない。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Guard")
+	TObjectPtr<UAnimMontage> GuardSuccessMontage;
+
+	/** ガード可能角度（正面 0 度からの片側、deg）。180 = 全方位。範囲外は通常被弾（PG-06）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Guard", meta = (ClampMin = "0", ClampMax = "180"))
+	float GuardableAngleDeg = 180.f;
+
+	/** ガード成功時の演出（SE / VFX / シェイク）。PG-18。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Guard")
+	FCombatFeedback GuardSuccessFeedback;
+
+	/** ジャストガード時に追加で再生する演出。PG-18。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|JustGuard")
+	FCombatFeedback JustGuardFeedback;
 
 	// --- ジャストガード（仕様書 優先順位「ジャストガード」）---
 
@@ -121,7 +139,11 @@ public:
 	 * 盾耐久 0 で気絶。戻り値: ガードが成立したか（false なら通常被弾で処理すべき）。
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Player|Guard")
-	bool HandleGuardedHit(int32 EnemyAttackPower, int32 ShieldChipValue, bool bJustGuard);
+	bool HandleGuardedHit(int32 EnemyAttackPower, int32 ShieldChipValue, bool bJustGuard, AActor* Attacker = nullptr);
+
+	/** Attacker の方向が GuardableAngleDeg 内か（Attacker 未指定なら true）。 */
+	UFUNCTION(BlueprintPure, Category = "Player|Guard")
+	bool IsWithinGuardAngle(const AActor* Attacker) const;
 
 	// --- デリゲート ---
 
@@ -155,5 +177,4 @@ private:
 	float ShieldRegenDelayTimer = 0.f;
 	float SavedMaxWalkSpeed = -1.f;
 	float TimeSinceGuardStart = 0.f;
-	FTimerHandle HitStopTimerHandle;
 };

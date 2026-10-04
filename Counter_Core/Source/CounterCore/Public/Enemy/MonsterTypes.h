@@ -2,7 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataTable.h"
+#include "Common/CombatFeedbackTypes.h"
 #include "MonsterTypes.generated.h"
+
+class UAnimMontage;
+class UNiagaraSystem;
 
 /**
  * 敵（モンスター）の状態。仕様書 Monster シート「状態フラグ」:
@@ -17,7 +21,37 @@ enum class EMonsterState : uint8
 	Attack  UMETA(DisplayName = "攻撃"),
 	Hitstun UMETA(DisplayName = "やられ"),
 	Stun    UMETA(DisplayName = "スタン"),
-	Dead    UMETA(DisplayName = "死亡")
+	Dead    UMETA(DisplayName = "死亡"),
+	GetUp   UMETA(DisplayName = "立ち上がり")
+};
+
+/** 攻撃中の向きを誰が決めるか（PG-15）。 */
+UENUM(BlueprintType)
+enum class EMonsterRotationAuthority : uint8
+{
+	Game       UMETA(DisplayName = "ゲーム側（TurnRate で軸合わせ）"),
+	RootMotion UMETA(DisplayName = "RootMotion（ゲーム側は回さない）")
+};
+
+/** 多段判定の 1 区間（PG-16）。時刻は攻撃開始からの秒。 */
+USTRUCT(BlueprintType)
+struct FMonsterHitWindow
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Attack", meta = (ClampMin = "0"))
+	float Start = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Attack", meta = (ClampMin = "0"))
+	float End = 0.f;
+
+	/** この区間の攻撃力。0 = 行の Damage。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Attack", meta = (ClampMin = "0"))
+	int32 Damage = 0;
+
+	/** true: 前の区間で当てた相手にも再ヒットする。false: この攻撃中に未ヒットの相手だけ。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Attack")
+	bool bAllowRehit = true;
 };
 
 /**
@@ -32,6 +66,14 @@ struct FMonsterAttackFrameData : public FTableRowBase
 	/** 攻撃の識別名（例: Attack01）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Attack")
 	FName AttackId;
+
+	/** この攻撃で再生する Montage。素材差し替えはここ。未設定なら AMonsterCharacterBase::AttackMontages[行名]。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Attack|Asset")
+	TObjectPtr<UAnimMontage> Montage = nullptr;
+
+	/** 判定発生時の斬撃 VFX。未設定なら AMonsterCharacterBase::AttackVFX[行名]。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Attack|Asset")
+	TObjectPtr<UNiagaraSystem> AttackVFX = nullptr;
 
 	/** 接触判定に入るプレイヤーとの距離（m）。0 = 距離条件なし。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Attack", meta = (ClampMin = "0"))
@@ -80,6 +122,34 @@ struct FMonsterAttackFrameData : public FTableRowBase
 	/** true なら、この攻撃はやられ割り込みでも次の攻撃へ遷移しない（攻撃5）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Attack")
 	bool bNoHitstunChain = false;
+
+	/** PG-14: WindupEnd Notify で Montage を止めて溜める秒数（0 = 溜めなし）。この間タイムラインも止まる。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Attack", meta = (ClampMin = "0"))
+	float WindupHoldTime = 0.f;
+
+	/** PG-15: 向きの決定権。RootMotion なら予兆中もゲーム側では回さない（振り返り攻撃など）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Attack")
+	EMonsterRotationAuthority RotationAuthority = EMonsterRotationAuthority::Game;
+
+	/** PG-15: この攻撃中にゲーム側で回頭できる合計角度（deg）。0 = 無制限。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Attack", meta = (ClampMin = "0"))
+	float MaxTrackingAngleDeg = 0.f;
+
+	/** PG-16: 多段判定。空なら HitActiveStart / HitActiveEnd の 1 区間。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Attack")
+	TArray<FMonsterHitWindow> HitWindows;
+
+	/** PG-19: 命中時ヒットストップ。bEnabled=false なら AMonsterCharacterBase::HitStop（既定）を使う。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Attack")
+	FHitStopSettings HitStop = FHitStopSettings{ false, 0.09f, 0.02f, EHitStopScope::Actor };
+
+	/** PG-18: 攻撃開始時の演出（風切り SE / トレイル ON など）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Attack|Feedback")
+	FCombatFeedback SwingFeedback;
+
+	/** PG-18: 命中時の演出。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Attack|Feedback")
+	FCombatFeedback HitFeedback;
 };
 
 /**

@@ -71,11 +71,11 @@ class COUNTERCORE_API UMonsterAnimInstance : public UAnimInstance
 public:
 	UMonsterAnimInstance();
 
-	/** Idle ループ（既定: MM_MonsterIdle）。 */
+	/** Idle ループ。AMonsterCharacterBase::LocomotionIdleAnim から設定される。 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Monster|Anim")
 	TObjectPtr<UAnimSequence> IdleAnim;
 
-	/** 走りループ（既定: MM_MonsterRun）。 */
+	/** 走りループ。AMonsterCharacterBase::LocomotionRunAnim から設定される。 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Monster|Anim")
 	TObjectPtr<UAnimSequence> RunAnim;
 

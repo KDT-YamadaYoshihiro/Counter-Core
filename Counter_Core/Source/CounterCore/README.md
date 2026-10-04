@@ -77,9 +77,8 @@
 
 ### ヒットストップ / カメラシェイク（仕様書 Battle）
 
-- **ヒットストップ** `bHitStopEnabled`（既定 true）: 敵の攻撃がプレイヤーに当たった / 敵が被弾・やられた ときに
-  `CustomTimeDilation` と `GlobalAnimRateScale` を `HitStopTimeScale`（既定 0.02）に落とし、
-  `HitStopDuration`（既定 0.09 秒・実時間）後に戻す。
+- **ヒットストップ** `HitStop`（`FHitStopSettings`: bEnabled / Duration 0.09 秒 / TimeScale 0.02 / Scope）: 敵の攻撃がプレイヤーに当たった / 敵が被弾・やられた ときに
+  `UCombatFeedbackLibrary::ApplyHitStop` で実行（多重発生は延長のみ）。攻撃別の値は DT_MonsterAttacks の `HitStop` が優先。
 - **カメラシェイク**: プレイヤー0の `PlayerCameraManager->StartCameraShake(class, CameraShakeScale)`。
   `CameraShakeScale`（既定 **0.25** = 控えめ）でシェイク BP の強度を一括スケール。
   - `AttackHitCameraShake` = `BP_CameraShake_Hit_Player`（敵の攻撃がヒット時）

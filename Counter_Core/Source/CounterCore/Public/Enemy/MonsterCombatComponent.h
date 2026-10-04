@@ -90,6 +90,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Status")
 	FMonsterStatus Status;
 
+	/** true の間は被弾を全て無効（PG-12 立ち上がり中の無敵など）。 */
+	UPROPERTY(BlueprintReadWrite, Category = "Monster|Status")
+	bool bInvulnerable = false;
+
 	/** 現在ラッシュ中か（プレイヤー側が設定）。 */
 	UPROPERTY(BlueprintReadWrite, Category = "Monster|Battle")
 	bool bTargetInRush = false;

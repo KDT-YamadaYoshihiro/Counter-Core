@@ -2,6 +2,7 @@
 #include "Player/PlayerCombatComponent.h"
 #include "Player/PlayerGuardComponent.h"
 #include "Player/PlayerCameraComponent.h"
+#include "Player/PlayerActionComponent.h"
 #include "Enemy/MonsterCombatComponent.h"
 #include "Battle/BattleDirectorComponent.h"
 #include "Engine/Canvas.h"
@@ -143,7 +144,91 @@ void ACounterCoreHUD::DrawGaugeImage(const FGaugeImageConfig& Cfg, float VW, flo
 	// （アンカーだけ画面比率、サイズは生ピクセルという混在が解像度ごとのズレの原因だった。）
 	const float X = VW * Cfg.AnchorFraction.X + Cfg.PixelOffset.X * UIScale;
 	const float Y = VH * Cfg.AnchorFraction.Y + Cfg.PixelOffset.Y * UIScale;
-	DrawTexture(Cfg.Texture, X, Y, Cfg.Size.X * UIScale, Cfg.Size.Y * UIScale, 0.f, 0.f, 1.f, 1.f);
+	const float W = Cfg.Size.X * UIScale;
+	const float H = Cfg.Size.Y * UIScale;
+	DrawNineSlice(Cfg.Texture, X, Y, W, H, Cfg.NineSliceMargin);
+	// PG-27: 枠と装飾。
+	if (Cfg.FrameTexture)
+	{
+		DrawNineSlice(Cfg.FrameTexture, X, Y, W, H, Cfg.FrameNineSliceMargin);
+	}
+	if (Cfg.DecorationTexture)
+	{
+		DrawTexture(Cfg.DecorationTexture, X + Cfg.DecorationOffset.X * UIScale, Y + Cfg.DecorationOffset.Y * UIScale,
+			Cfg.DecorationSize.X * UIScale, Cfg.DecorationSize.Y * UIScale, 0.f, 0.f, 1.f, 1.f);
+	}
+}
+
+void ACounterCoreHUD::DrawNineSlice(UTexture2D* Tex, float X, float Y, float W, float H, const FMargin& M)
+{
+	if (!Tex)
+	{
+		return;
+	}
+	if (M.Left <= 0.f && M.Right <= 0.f && M.Top <= 0.f && M.Bottom <= 0.f)
+	{
+		DrawTexture(Tex, X, Y, W, H, 0.f, 0.f, 1.f, 1.f);
+		return;
+	}
+	// 端の画面上の幅は「テクスチャピクセル × UIScale」。矩形より大きい場合は縮める。
+	const float TW = static_cast<float>(FMath::Max(1, Tex->GetSizeX()));
+	const float TH = static_cast<float>(FMath::Max(1, Tex->GetSizeY()));
+	float L = M.Left * TW * UIScale, R = M.Right * TW * UIScale;
+	float T = M.Top * TH * UIScale, B = M.Bottom * TH * UIScale;
+	if (L + R > W) { const float k = W / (L + R); L *= k; R *= k; }
+	if (T + B > H) { const float k = H / (T + B); T *= k; B *= k; }
+
+	const float Xs[4] = { X, X + L, X + W - R, X + W };
+	const float Ys[4] = { Y, Y + T, Y + H - B, Y + H };
+	const float Us[4] = { 0.f, M.Left, 1.f - M.Right, 1.f };
+	const float Vs[4] = { 0.f, M.Top, 1.f - M.Bottom, 1.f };
+	for (int32 iy = 0; iy < 3; ++iy)
+	{
+		for (int32 ix = 0; ix < 3; ++ix)
+		{
+			const float CW = Xs[ix + 1] - Xs[ix];
+			const float CH = Ys[iy + 1] - Ys[iy];
+			if (CW <= 0.f || CH <= 0.f)
+			{
+				continue;
+			}
+			DrawTexture(Tex, Xs[ix], Ys[iy], CW, CH, Us[ix], Vs[iy], Us[ix + 1] - Us[ix], Vs[iy + 1] - Vs[iy]);
+		}
+	}
+}
+
+void ACounterCoreHUD::DrawControlGuide(float VW, float VH)
+{
+	const float S = UIScale;
+	DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.7f), 0.f, 0.f, VW, VH);
+	const float CX = VW * 0.5f;
+	DrawLabel(ControlGuideTitle.ToString(), CX - 70.f * S, VH * 0.12f, FLinearColor::White, 2.0f);
+	DrawGaugeImage(ControllerImage, VW, VH);
+
+	if (ControlGuideTable)
+	{
+		TArray<FControlGuideRow*> Rows;
+		ControlGuideTable->GetAllRows<FControlGuideRow>(TEXT("ControlGuide"), Rows);
+		const float X0 = VW * ControlGuideTableOrigin.X;
+		for (int32 i = 0; i < Rows.Num(); ++i)
+		{
+			const FControlGuideRow* Row = Rows[i];
+			if (!Row)
+			{
+				continue;
+			}
+			const float Y = VH * ControlGuideTableOrigin.Y + i * (VH * ControlGuideRowSpacing);
+			float TextX = X0;
+			if (Row->ButtonIcon)
+			{
+				DrawTexture(Row->ButtonIcon, X0, Y, ControlGuideIconSize.X * S, ControlGuideIconSize.Y * S, 0.f, 0.f, 1.f, 1.f);
+				TextX += (ControlGuideIconSize.X + 8.f) * S;
+			}
+			DrawLabel(Row->ButtonName.ToString(), TextX, Y, FLinearColor(1.f, 0.9f, 0.4f), ControlGuideTextScale);
+			DrawLabel(Row->ActionName.ToString(), X0 + ControlGuideActionColumnX * S, Y, FLinearColor(0.9f, 0.9f, 0.92f), ControlGuideTextScale);
+		}
+	}
+	DrawLabel(ControlGuideBackHint.ToString(), CX - 70.f * S, VH * 0.9f, FLinearColor(0.6f, 0.6f, 0.65f), 1.1f);
 }
 
 void ACounterCoreHUD::DrawHUD()
@@ -255,8 +340,24 @@ void ACounterCoreHUD::DrawHUD()
 	UPlayerCombatComponent* PC = Player->FindComponentByClass<UPlayerCombatComponent>();
 	UPlayerGuardComponent* PG = Player->FindComponentByClass<UPlayerGuardComponent>();
 
-	// ---- プレイヤー HP: 緑バー + 遅延赤バー、画面下中央 ----
+	// ---- 回復薬アイコン + 残数（PG-22）----
 	DrawGaugeImage(HealPotionImage, VW, VH);
+	if (bShowPotionCount)
+	{
+		if (const UPlayerActionComponent* PA = Player->FindComponentByClass<UPlayerActionComponent>())
+		{
+			const int32 Count = PA->GetPotionCount();
+			FFormatNamedArguments Args;
+			Args.Add(TEXT("Count"), Count);
+			Args.Add(TEXT("Max"), PA->MaxPotionCount);
+			const float X = VW * HealPotionImage.AnchorFraction.X + (HealPotionImage.PixelOffset.X + PotionCountOffset.X) * S;
+			const float Y = VH * HealPotionImage.AnchorFraction.Y + (HealPotionImage.PixelOffset.Y + PotionCountOffset.Y) * S;
+			DrawLabel(FText::Format(PotionCountFormat, Args).ToString(), X, Y,
+				Count > 0 ? PotionCountColor : PotionEmptyColor, PotionCountScale);
+		}
+	}
+
+	// ---- プレイヤー HP: 緑バー + 遅延赤バー、画面下中央 ----
 	if (bShowPlayerHp && PC)
 	{
 		DrawGaugeImage(PlayerHpGaugeImage, VW, VH);
@@ -427,23 +528,7 @@ void ACounterCoreHUD::DrawInGameMenu(UBattleDirectorComponent* BD, float VW, flo
 	// 操作説明パネル
 	if (BD->IsControlsPanelOpen())
 	{
-		DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.7f), 0.f, 0.f, VW, VH);
-		const float CX = VW * 0.5f;
-		DrawLabel(TEXT("操作説明"), CX - 70.f * S, VH * 0.12f, FLinearColor::White, 2.0f);
-		const TCHAR* Lines[] = {
-			TEXT("移動        : 左スティック / WASD"),
-			TEXT("視点        : 右スティック / マウス"),
-			TEXT("ガード      : RT / 右クリック（長押し）"),
-			TEXT("小/中/大攻撃: X / Y / RB（左クリック=小）"),
-			TEXT("回避        : A / Space"),
-			TEXT("回復        : B / H"),
-			TEXT("メニュー    : Start / Esc"),
-		};
-		for (int32 i = 0; i < UE_ARRAY_COUNT(Lines); ++i)
-		{
-			DrawLabel(Lines[i], VW * 0.22f, VH * 0.25f + i * (VH * 0.07f), FLinearColor(0.9f, 0.9f, 0.92f), 1.2f);
-		}
-		DrawLabel(TEXT("戻る: Esc / B"), CX - 70.f * S, VH * 0.9f, FLinearColor(0.6f, 0.6f, 0.65f), 1.1f);
+		DrawControlGuide(VW, VH);
 		return;
 	}
 

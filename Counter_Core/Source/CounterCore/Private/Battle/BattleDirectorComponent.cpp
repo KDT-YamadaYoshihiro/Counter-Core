@@ -16,6 +16,7 @@
 #include "EngineUtils.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
+#include "Sound/SoundBase.h"
 
 UBattleDirectorComponent::UBattleDirectorComponent()
 {
@@ -217,6 +218,10 @@ void UBattleDirectorComponent::OpenMenu()
 	MenuSelection = 0;
 
 	SetActorsFrozen(true);
+	if (MenuOpenSound)
+	{
+		UGameplayStatics::PlaySound2D(this, MenuOpenSound);
+	}
 	// バトル停止（時間をほぼ止める）。メニュー操作は Tick で拾うので完全 Pause はしない。
 	UGameplayStatics::SetGlobalTimeDilation(this, MenuTimeDilation);
 	OnMenuOpened.Broadcast();
@@ -252,6 +257,15 @@ void UBattleDirectorComponent::PollMenuInput()
 	const bool bDown = Pressed(EKeys::S, EKeys::Down, EKeys::Gamepad_DPad_Down) || PC->WasInputKeyJustPressed(EKeys::Gamepad_LeftStick_Down);
 	const bool bConfirm = Pressed(EKeys::Enter, EKeys::SpaceBar, EKeys::Gamepad_FaceButton_Bottom);
 	const bool bCancel = Pressed(EKeys::Escape, EKeys::Gamepad_FaceButton_Right, EKeys::BackSpace);
+
+	// PG-18: UI SE（決定 > キャンセル > 移動 の優先で 1 つだけ）。
+	{
+		USoundBase* Snd = bConfirm ? MenuConfirmSound.Get() : bCancel ? MenuCancelSound.Get() : (bUp || bDown) ? MenuMoveSound.Get() : nullptr;
+		if (Snd)
+		{
+			UGameplayStatics::PlaySound2D(this, Snd);
+		}
+	}
 
 	// 操作説明パネル表示中はキャンセルでメニューへ戻るだけ。
 	if (bControlsPanelOpen)

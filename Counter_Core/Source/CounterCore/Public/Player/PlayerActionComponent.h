@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "Player/PlayerTypes.h"
+#include "Common/AnimNotify_CombatEvent.h"
 #include "PlayerActionComponent.generated.h"
 
 class UPlayerCombatComponent;
@@ -14,11 +15,13 @@ class UAnimMontage;
 class UChildActorComponent;
 class UShapeComponent;
 class UCameraShakeBase;
+class UAnimInstance;
 struct FInputActionValue;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPlayerActionChanged, EPlayerActionType, NewAction);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPlayerAttackStarted, FName, AttackId);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FPlayerActionSimpleEvent);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPlayerPotionChanged, int32, Count, int32, MaxCount);
 
 /**
  * 仕様書 Player シート「攻撃 / 回避 / アクション遷移 / 優先度」。
@@ -29,7 +32,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FPlayerActionSimpleEvent);
  * HitActive 区間だけ Overlap を有効化してここで拾う。
  */
 UCLASS(ClassGroup = (Player), meta = (BlueprintSpawnableComponent))
-class COUNTERCORE_API UPlayerActionComponent : public UActorComponent
+class COUNTERCORE_API UPlayerActionComponent : public UActorComponent, public ICombatEventReceiver
 {
 	GENERATED_BODY()
 
@@ -76,6 +79,46 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack", meta = (ClampMin = "0", ClampMax = "2"))
 	float CameraShakeScale = 0.25f;
 
+	/** DT のフレーム値（InterruptibleStartFrame）を秒へ換算するフレームレート（PG-08）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack|Timing", meta = (ClampMin = "1"))
+	float FrameRate = 30.f;
+
+	/** SyncAttackTableToMontages での端数処理（PG-09）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack|Timing")
+	EFrameRounding InterruptibleFrameRounding = EFrameRounding::Floor;
+
+	/** SyncAttackTableToMontages: InterruptibleStartFrame = 総フレーム × この割合（PG-09）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack|Timing", meta = (ClampMin = "0", ClampMax = "1"))
+	float AutoInterruptibleRatio = 0.6f;
+
+	/** SyncAttackTableToMontages: PlayRate が 0（自動）の行に書き込む再生速度。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack|Timing", meta = (ClampMin = "0.01"))
+	float SyncPlayRate = 1.f;
+
+	/** 攻撃を強制終了するときの Montage ブレンドアウト時間（PG-10）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack|Timing", meta = (ClampMin = "0"))
+	float AttackBlendOutTime = 0.1f;
+
+	/**
+	 * true: 攻撃判定を Montage の Combat Event Notify（HitStart / HitEnd / AttackEnd）で切り替える（PG-03）。
+	 * false: DT の秒数（HitActiveStart / HitActiveEnd / EndTime）で切り替える。
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack|Timing")
+	bool bUseNotifyHitWindow = false;
+
+	/** Combat Event Notify の名前。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack|Timing")
+	FCombatEventNames CombatEventNames;
+
+	/** 命中時のヒットストップを被弾した敵にもかける（PG-19）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack")
+	bool bHitStopAlsoOnTarget = true;
+
+	/** エディタ用（PG-09）: AttackDataTable の各行を Montage 尺に 1:1 同期。
+	 * EndTime = 尺 / PlayRate、InterruptibleStartFrame = 総フレーム × AutoInterruptibleRatio（端数は InterruptibleFrameRounding）。 */
+	UFUNCTION(CallInEditor, BlueprintCallable, Category = "Player|Attack|Timing")
+	void SyncAttackTableToMontages();
+
 	// --- 回避（仕様: ローリング / 無敵時間あり）---
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Dodge")
@@ -95,18 +138,74 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Dodge", meta = (ClampMin = "0"))
 	float DodgeDistance = 400.f;
 
-	// --- 回復（仕様のアクション一覧にあり。数値は調整用）---
+	/** 回避開始時に入力方向へ即回転する（PG-20）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Dodge")
+	bool bFaceDodgeDirection = true;
+
+	/** 入力が無いときの回避方向（PG-20）。向きは変えない。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Dodge")
+	EDodgeNoInputDirection DodgeNoInputDirection = EDodgeNoInputDirection::Backward;
+
+	/** 移動入力をどの向き基準でワールド方向にするか（PG-20）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Dodge")
+	EDodgeInputBasis DodgeInputBasis = EDodgeInputBasis::Camera;
+
+	/** この大きさ未満の入力は「入力なし」扱い（PG-20）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Dodge", meta = (ClampMin = "0", ClampMax = "1"))
+	float DodgeInputDeadZone = 0.2f;
+
+	/** ロックオン中の回避の向き（PG-20）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Dodge")
+	ELockOnDodgeFacing LockOnDodgeFacing = ELockOnDodgeFacing::FaceDodgeDirection;
+
+	/** 回避開始時の演出（PG-18）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Dodge")
+	FCombatFeedback DodgeFeedback;
+
+	// --- 回復（PG-05 / PG-22）---
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Heal")
 	TObjectPtr<UAnimMontage> HealMontage;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Heal", meta = (ClampMin = "0"))
 	int32 HealAmount = 30;
+
+	/** 回復のコスト。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Heal")
+	EHealCostMode HealCostMode = EHealCostMode::Potion;
+
+	/** HealCostMode がゲージを含むときに消費するゲージ（枠）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Heal", meta = (ClampMin = "0"))
 	int32 HealGaugeCost = 3;
 
-	// --- 攻撃ヒットストップ実時間（bHitStop の攻撃で使用）---
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack", meta = (ClampMin = "0"))
-	float HitStopDuration = 0.11f;
+	/** 回復薬の初期所持数。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Heal", meta = (ClampMin = "0"))
+	int32 InitialPotionCount = 3;
+
+	/** 回復薬の最大所持数。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Heal", meta = (ClampMin = "0"))
+	int32 MaxPotionCount = 3;
+
+	/** 回復動作の全体時間（秒）。0 = HealMontage の尺（Montage も無ければ即時）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Heal", meta = (ClampMin = "0"))
+	float HealDuration = 0.f;
+
+	/** 回復開始から HP が増えるまでの秒。これより前に中断されると回復しない（コストは消費済み）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Heal", meta = (ClampMin = "0"))
+	float HealApplyTime = 0.f;
+
+	/** 回復中に許可する操作（PG-05）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Heal")
+	bool bAllowMoveWhileHealing = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Heal")
+	bool bAllowDodgeWhileHealing = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Heal")
+	bool bAllowGuardWhileHealing = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Heal")
+	bool bAllowAttackWhileHealing = false;
+
+	/** 回復時の演出（PG-18）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Heal")
+	FCombatFeedback HealFeedback;
 
 	/** コンボ終了後、次の攻撃を始められるまでの間（秒）。連打での即リスタート痙攣防止。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack", meta = (ClampMin = "0"))
@@ -167,6 +266,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Player|Action")
 	void CancelAttack();
 
+	/** PG-10: 現在の攻撃段を終了（判定OFF・RootMotion/Montage 停止・バッファ消去）。何度呼んでも 1 回だけ効く。 */
+	UFUNCTION(BlueprintCallable, Category = "Player|Action")
+	void EndCurrentAttackStep(bool bStopMontage = true);
+
+	UFUNCTION(BlueprintPure, Category = "Player|Heal")
+	int32 GetPotionCount() const { return PotionCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Player|Heal")
+	bool IsHealing() const { return CurrentAction == EPlayerActionType::Heal; }
+
+	/** 回復薬を増減（MaxPotionCount でクランプ）。 */
+	UFUNCTION(BlueprintCallable, Category = "Player|Heal")
+	void AddPotion(int32 Delta);
+
 	/** 移動入力方向をここに供給しておくと回避の方向決めに使う（BP の Move から）。 */
 	UFUNCTION(BlueprintCallable, Category = "Player|Action")
 	void SetMoveInput(FVector2D Input) { LastMoveInput = Input; }
@@ -176,6 +289,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Player|Action") FPlayerActionChanged OnActionChanged;
 	UPROPERTY(BlueprintAssignable, Category = "Player|Action") FPlayerAttackStarted OnAttackStarted;
 	UPROPERTY(BlueprintAssignable, Category = "Player|Action") FPlayerActionSimpleEvent OnDodgeStarted;
+	UPROPERTY(BlueprintAssignable, Category = "Player|Heal") FPlayerPotionChanged OnPotionCountChanged;
+
+	// ICombatEventReceiver
+	virtual void ReceiveCombatEvent_Implementation(FName EventName) override;
 
 protected:
 	virtual void BeginPlay() override;
@@ -213,7 +330,10 @@ private:
 	void OnMeleeOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp,
 		int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 
-	void ApplyHitStop(float Duration);
+	void TickHeal(float Dt);
+	void EndHeal(bool bInterrupted);
+	void SetMoveInputIgnored(bool bIgnore);
+	UAnimInstance* GetAnimInstance() const;
 	void PrintAction(const FString& Msg, const FColor& Color) const;
 
 	UPlayerCombatComponent* GetCombat() const;
@@ -238,6 +358,15 @@ private:
 	float ComboCooldownTimer = 0.f;        // コンボ後の再始動待ち
 	bool bMeleeActive = false;
 	bool bComboQueued = false;              // ウィンドウ中に次入力があった
+	bool bAttackStepActive = false;         // EndCurrentAttackStep の二重実行防止
+	float CurrentPlayRate = 1.f;            // 現在の攻撃 Montage の再生速度
+
+	// 回復
+	int32 PotionCount = 0;
+	float HealElapsed = 0.f;
+	float HealTotal = 0.f;
+	bool bHealApplied = false;
+	bool bMoveInputIgnored = false;
 	EPlayerAttackTier QueuedTier = EPlayerAttackTier::Small;
 	UPROPERTY() TSet<TObjectPtr<AActor>> HitActorsThisSwing;
 
@@ -247,5 +376,4 @@ private:
 	FVector DodgeDir = FVector::ZeroVector;
 
 	FVector2D LastMoveInput = FVector2D::ZeroVector;
-	FTimerHandle HitStopTimerHandle;
 };

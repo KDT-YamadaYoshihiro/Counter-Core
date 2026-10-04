@@ -27,33 +27,9 @@
 #include "Engine/SkeletalMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Enemy/MonsterAnimInstance.h"
-
-namespace
-{
-	// 仕様書 Monster / 攻撃詳細シートで決めた「攻撃 ID → モンタージュ」の対応。
-	// キーは DT_MonsterAttacks の行名（UMonsterAttackComponent が OnPlayAttackAnim で流す AttackId）。
-	struct FMonsterMontageDefault
-	{
-		const TCHAR* Key;
-		const TCHAR* Path;
-	};
-
-	const FMonsterMontageDefault GMonsterAttackMontages[] =
-	{
-		{ TEXT("Attack01"),   TEXT("/Game/MonsterAnimation/AM_Monster/AM_MonsterAttack1.AM_MonsterAttack1") }, // 拳攻撃
-		{ TEXT("Attack02"),   TEXT("/Game/MonsterAnimation/AM_Monster/AM_MonsterAttack2.AM_MonsterAttack2") }, // 斧振り下ろし
-		{ TEXT("Attack03"),   TEXT("/Game/MonsterAnimation/AM_Monster/AM_MonsterAttack3.AM_MonsterAttack3") }, // 斧を右から左へ
-		{ TEXT("Attack04"),   TEXT("/Game/MonsterAnimation/AM_Monster/AM_MonsterAttack4.AM_MonsterAttack4") }, // 振り返り攻撃
-		{ TEXT("Attack05_1"), TEXT("/Game/MonsterAnimation/AM_Monster/AM_MonsterAttack5.AM_MonsterAttack5") }, // 攻撃5 1段目・振り上げ
-		{ TEXT("Attack05_2"), TEXT("/Game/MonsterAnimation/AM_Monster/AM_MonsterAttack6.AM_MonsterAttack6") }, // 攻撃5 2段目・振り下ろし
-	};
-
-	UAnimMontage* LoadMonsterMontage(const TCHAR* Path)
-	{
-		ConstructorHelpers::FObjectFinderOptional<UAnimMontage> Finder(Path);
-		return Finder.Get();
-	}
-}
+#include "Common/CombatFeedbackLibrary.h"
+#include "AIController.h"
+#include "BrainComponent.h"
 
 AMonsterCharacterBase::AMonsterCharacterBase()
 {
@@ -73,41 +49,15 @@ AMonsterCharacterBase::AMonsterCharacterBase()
 	WeaponActor = CreateDefaultSubobject<UChildActorComponent>(TEXT("WeaponActor"));
 	WeaponActor->SetupAttachment(GetMesh(), FName("hand_r"));
 
-	// --- 見た目アセットの既定値（/Game/MonsterAnimation）---
-	// 仕様書「モンスター」のモデル・アニメーション。ここで C++ の既定として持たせておき、
-	// BP_Enemy 側で明示的に上書きしていなければこれが使われる（上書き済みなら BP 側が優先）。
+	// 見た目アセット（メッシュ・Montage・VFX）は BP_Enemy / DT_MonsterAttacks で設定する。
 	if (USkeletalMeshComponent* MeshComp = GetMesh())
 	{
-		static ConstructorHelpers::FObjectFinderOptional<USkeletalMesh> MonsterMesh(
-			TEXT("/Game/MonsterAnimation/Model/SM_Monster.SM_Monster"));
-		if (USkeletalMesh* MonsterMeshAsset = MonsterMesh.Get())
-		{
-			MeshComp->SetSkeletalMeshAsset(MonsterMeshAsset);
-		}
 		// Character 既定のメッシュ配置（足を接地・前方 +X 向き）。SM_Monster の原点・スケールで要微調整。
 		MeshComp->SetRelativeLocationAndRotation(FVector(0.f, 0.f, -89.f), FRotator(0.f, -90.f, 0.f));
 		// AnimBlueprint アセット無しで移動ブレンド + モンタージュを成立させるネイティブ AnimInstance。
 		MeshComp->SetAnimInstanceClass(UMonsterAnimInstance::StaticClass());
 	}
 
-	// 攻撃モンタージュ（Attack01〜Attack05）。
-	for (const FMonsterMontageDefault& Entry : GMonsterAttackMontages)
-	{
-		if (UAnimMontage* Montage = LoadMonsterMontage(Entry.Path))
-		{
-			AttackMontages.Add(FName(Entry.Key), Montage);
-		}
-	}
-
-	// リアクションモンタージュ。死亡は bRagdollOnDeath（PhysicsAsset_Monster）に任せるので設定しない。
-	if (UAnimMontage* Damage = LoadMonsterMontage(TEXT("/Game/MonsterAnimation/AM_Monster/AM_MonsterDamage.AM_MonsterDamage")))
-	{
-		ReactionMontages.Add(EMonsterState::Hitstun, Damage); // 仕様: やられ（ガード成功時）
-	}
-	if (UAnimMontage* Stun = LoadMonsterMontage(TEXT("/Game/MonsterAnimation/AM_Monster/AM_MonsterStanIdle.AM_MonsterStanIdle")))
-	{
-		ReactionMontages.Add(EMonsterState::Stun, Stun); // 仕様: スタン 15 秒（ループするダウン姿勢）
-	}
 }
 
 void AMonsterCharacterBase::OnConstruction(const FTransform& Transform)
@@ -179,9 +129,20 @@ void AMonsterCharacterBase::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (UMonsterAnimInstance* MonsterAnim = GetMesh() ? Cast<UMonsterAnimInstance>(GetMesh()->GetAnimInstance()) : nullptr)
+	{
+		if (LocomotionIdleAnim) { MonsterAnim->IdleAnim = LocomotionIdleAnim; }
+		if (LocomotionRunAnim)  { MonsterAnim->RunAnim  = LocomotionRunAnim; }
+	}
+
 	if (Combat)
 	{
 		Combat->OnStateChangeRequested.AddDynamic(this, &AMonsterCharacterBase::HandleCombatStateRequest);
+		Combat->OnDamaged.AddDynamic(this, &AMonsterCharacterBase::HandleCombatDamaged);
+	}
+	if (UAnimInstance* Anim = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+	{
+		Anim->OnMontageEnded.AddDynamic(this, &AMonsterCharacterBase::HandleMontageEnded);
 	}
 
 	// 頭上の HP バー（BP の WidgetComponent「HpGauge」/ UW_HpGaugeOnHead）は不要なので消す。
@@ -319,6 +280,7 @@ int32 AMonsterCharacterBase::StatePriority(EMonsterState S)
 	{
 	case EMonsterState::Dead:    return 100;
 	case EMonsterState::Stun:    return 80;
+	case EMonsterState::GetUp:   return 70; // 立ち上がり完了まで AI / やられを受け付けない（Dead / Stun は割り込む）
 	case EMonsterState::Hitstun: return 60;
 	case EMonsterState::Attack:  return 40;
 	case EMonsterState::Run:     return 20;
@@ -352,6 +314,15 @@ void AMonsterCharacterBase::ForceState(EMonsterState NewState)
 void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 {
 	const EMonsterState Old = State;
+	if (Old == EMonsterState::Dead)
+	{
+		return; // PG-11/12: Dead は終端（GetUp よりも優先）
+	}
+	// PG-12: やられ / スタン終了で待機へ戻るときは立ち上がりを挟む。
+	if (NewState == EMonsterState::Idle && Old != EMonsterState::GetUp && GetUpSourceStates.Contains(Old))
+	{
+		NewState = EMonsterState::GetUp;
+	}
 	if (Old == NewState && Old != EMonsterState::Idle)
 	{
 		return;
@@ -361,6 +332,15 @@ void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 	if (NewState != EMonsterState::Attack && Attack && Attack->IsAttacking())
 	{
 		Attack->CancelAttack();
+	}
+	if (NewState != EMonsterState::Attack)
+	{
+		EndWindupHold();
+		StopTrail();
+	}
+	if (Old == EMonsterState::GetUp && Combat)
+	{
+		Combat->bInvulnerable = false;
 	}
 	// 判定コリジョンは攻撃以外の状態では必ず OFF。
 	if (NewState != EMonsterState::Attack && ActiveHitbox)
@@ -374,7 +354,7 @@ void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 	// 移動ロック: スタン / 死亡 中は動かない。復帰時は歩行に戻す。
 	if (UCharacterMovementComponent* Move = GetCharacterMovement())
 	{
-		if (NewState == EMonsterState::Stun || NewState == EMonsterState::Dead)
+		if (NewState == EMonsterState::Stun || NewState == EMonsterState::Dead || NewState == EMonsterState::GetUp)
 		{
 			Move->StopMovementImmediately();
 			Move->DisableMovement();
@@ -410,6 +390,18 @@ void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 	{
 		// 仕様書 Monster「やられ」: 攻撃中止 → やられアニメ → [0.1]後方0.2Mノックバック+スタン+10 → [0.4]硬直終了。
 		HitstunTimer = Combat ? Combat->HitstunDuration : 0.4f;
+		if (bPendingGuardedReaction && bGuardedReactionUsesMontageLength)
+		{
+			UAnimMontage* M = GuardedReactionMontage;
+			if (!M)
+			{
+				if (TObjectPtr<UAnimMontage>* Found = ReactionMontages.Find(EMonsterState::Hitstun)) { M = *Found; }
+			}
+			if (M)
+			{
+				HitstunTimer = M->GetPlayLength();
+			}
+		}
 		bMovingToEngageCombo = false;
 		// 中断された攻撃が「やられ連鎖しない」（攻撃5）かどうかを覚えておく。
 		bInterruptedAttackNoChain = false;
@@ -440,24 +432,74 @@ void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 		break;
 	case EMonsterState::Dead:
 	{
-		// 仕様書: HP0 → AI 停止。Battle: モンスターが倒れる → リザルトへ（Combat->OnDied で通知済み）。
+		// PG-11: HP0 → AI / 移動 / 攻撃予約 / 判定を停止し、死亡 Montage を 1 回。
 		bMovingToEngageCombo = false;
-		if (GetCapsuleComponent())
+		CurrentComboAttacks.Reset();
+		ComboIndex = 0;
+		if (AAIController* AIC = Cast<AAIController>(GetController()))
 		{
-			GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+			AIC->StopMovement();
+			if (UBrainComponent* Brain = AIC->GetBrainComponent())
+			{
+				Brain->StopLogic(TEXT("Dead"));
+			}
 		}
-		if (bRagdollOnDeath && GetMesh() && GetMesh()->GetPhysicsAsset())
+		if (UCapsuleComponent* Cap = GetCapsuleComponent())
 		{
-			GetMesh()->SetCollisionProfileName(TEXT("Ragdoll"));
-			GetMesh()->SetAllBodiesSimulatePhysics(true);
-			GetMesh()->SetSimulatePhysics(true);
-			GetMesh()->WakeAllRigidBodies();
+			if (!DeathCapsuleCollisionProfile.IsNone())
+			{
+				Cap->SetCollisionProfileName(DeathCapsuleCollisionProfile);
+			}
+			else
+			{
+				Cap->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+			}
 		}
 		if (Attack)
 		{
 			Attack->SetComponentTickEnabled(false);
 		}
+		if (Combat)
+		{
+			Combat->bInvulnerable = true;
+		}
+		// 死亡 Montage が無ければ即ラグドール。あれば Montage 終了 / DeathEnd Notify でラグドール。
+		{
+			const TObjectPtr<UAnimMontage>* DeathM = ReactionMontages.Find(EMonsterState::Dead);
+			if (!DeathM || !*DeathM)
+			{
+				StartDeathRagdoll();
+			}
+			else if (UAnimInstance* Anim = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+			{
+				Anim->StopAllMontages(0.1f);
+			}
+		}
+		if (DeathDestroyDelay > 0.f)
+		{
+			SetLifeSpan(DeathDestroyDelay);
+		}
+		UCombatFeedbackLibrary::PlayCombatFeedback(this, DeathFeedback, this, nullptr, GetActorLocation());
 		PrintAI(TEXT("死亡"), FColor::Red);
+		break;
+	}
+	case EMonsterState::GetUp:
+	{
+		// PG-12: 立ち上がり Montage（ReactionMontages[GetUp]）の尺、無ければ GetUpTime だけ AI 停止。
+		bMovingToEngageCombo = false;
+		GetUpTimer = Combat ? Combat->GetUpTime : 1.f;
+		if (const TObjectPtr<UAnimMontage>* M = ReactionMontages.Find(EMonsterState::GetUp))
+		{
+			if (*M)
+			{
+				GetUpTimer = (*M)->GetPlayLength();
+			}
+		}
+		if (Combat && bInvulnerableDuringGetUp)
+		{
+			Combat->bInvulnerable = true;
+		}
+		PrintAI(TEXT("立ち上がり"), FColor::Green);
 		break;
 	}
 	case EMonsterState::Attack:
@@ -468,6 +510,10 @@ void AMonsterCharacterBase::EnterState(EMonsterState NewState)
 	}
 
 	PlayReaction(NewState);
+	if (NewState == EMonsterState::Hitstun)
+	{
+		bPendingGuardedReaction = false;
+	}
 	OnStateChanged.Broadcast(Old, NewState);
 }
 
@@ -670,7 +716,11 @@ void AMonsterCharacterBase::HandleToggleHitbox(bool bEnable)
 	}
 	if (bEnable)
 	{
-		HitActorsThisSwing.Reset();
+		// PG-16: 再ヒット可の区間（と最初の区間）だけリセット。
+		if (!Attack || Attack->ShouldResetHitTargets())
+		{
+			HitActorsThisSwing.Reset();
+		}
 		ActiveHitbox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 		UpdateHitboxDebugVisual(true);
 		// 判定ONの瞬間に既に重なっている相手も拾う。
@@ -685,14 +735,36 @@ void AMonsterCharacterBase::HandleToggleHitbox(bool bEnable)
 	{
 		ActiveHitbox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		UpdateHitboxDebugVisual(false);
-		HitActorsThisSwing.Reset();
 	}
 }
 
 void AMonsterCharacterBase::HandlePlayAttackAnim(FName AttackId)
 {
 	// 攻撃開始（予兆の頭）で攻撃モンタージュを再生。
+	HitActorsThisSwing.Reset();
+	EndWindupHold();
 	PlayAttackMontage(AttackId);
+
+	// PG-18: 攻撃開始の演出（風切り SE / トレイル ON）。
+	if (Attack)
+	{
+		const FMonsterAttackFrameData Data = Attack->GetActiveData();
+		StopTrail();
+		UCombatFeedbackLibrary::PlayCombatFeedback(this, Data.SwingFeedback, this, ActiveHitbox, GetActorLocation());
+		if (Data.SwingFeedback.Trail == ETrailAction::Start)
+		{
+			CurrentTrailTag = Data.SwingFeedback.TrailComponentTag;
+		}
+	}
+}
+
+void AMonsterCharacterBase::StopTrail()
+{
+	if (!CurrentTrailTag.IsNone())
+	{
+		UCombatFeedbackLibrary::SetTrailActive(this, CurrentTrailTag, false);
+		CurrentTrailTag = NAME_None;
+	}
 }
 
 void AMonsterCharacterBase::HandleAttackHitActive(FName AttackId)
@@ -719,21 +791,24 @@ void AMonsterCharacterBase::OnHitboxOverlap(UPrimitiveComponent* /*OverlappedCom
 	}
 	HitActorsThisSwing.Add(OtherActor);
 
-	const int32 Power = CurrentAttackPower();
+	// PG-16: 多段判定の区間ごとの攻撃力。
+	const int32 Power = (Attack && Attack->IsAttacking()) ? Attack->GetCurrentHitDamage() : CurrentAttackPower();
 	if (Power <= 0)
 	{
 		return;
 	}
+	const FMonsterAttackFrameData Data = Attack ? Attack->GetActiveData() : FMonsterAttackFrameData();
 
 	// プレイヤーのガード / コンバットコンポーネントがあれば直接そちらへ
 	// （盾耐久・ゲージ変換・被弾処理は C++ コンポーネントが持つ）。
 	bool bRouted = false;
 	if (UPlayerGuardComponent* PlayerGuard = OtherActor->FindComponentByClass<UPlayerGuardComponent>())
 	{
-		if (PlayerGuard->IsGuarding())
+		if (PlayerGuard->IsGuarding() && PlayerGuard->HandleGuardedHit(Power, Power, /*bJustGuard*/ false, this))
 		{
-			PlayerGuard->HandleGuardedHit(Power, Power, /*bJustGuard*/ false);
-			bRouted = true;
+			// PG-06: 攻撃者へ通知（判定を打ち切り、被ガードやられへ）。
+			OnAttackGuarded(Power);
+			return;
 		}
 	}
 	if (!bRouted)
@@ -750,33 +825,39 @@ void AMonsterCharacterBase::OnHitboxOverlap(UPrimitiveComponent* /*OverlappedCom
 			UDamageType::StaticClass());
 	}
 
-	ApplyHitStop();                              // 仕様書 Battle: 攻撃ヒット時のヒットストップ
+	// PG-19: 攻撃別ヒットストップ（DT）、無ければ既定。命中時のみ。
+	if (State != EMonsterState::Dead)
+	{
+		UCombatFeedbackLibrary::ApplyHitStop(this, Data.HitStop.bEnabled ? Data.HitStop : HitStop);
+	}
+	UCombatFeedbackLibrary::PlayCombatFeedback(this, Data.HitFeedback, this, nullptr, OtherActor->GetActorLocation());
 	PlayCameraShake(AttackHitCameraShake);       // 仕様書 Battle: 攻撃ヒット時のカメラシェイク
+}
+
+void AMonsterCharacterBase::OnAttackGuarded(int32 AttackPower)
+{
+	// 今の判定区間はここで終了（同じ振りで二重にガードさせない）。
+	if (Attack)
+	{
+		Attack->EndCurrentHitWindow();
+	}
+	if (!bReactToGuard || State == EMonsterState::Dead || !Combat)
+	{
+		return;
+	}
+	// 被ガードやられ: HandleIncomingHit(true) がスタン加算と Hitstun 要求を行う（攻撃5 などやられ無効区間は弾かれる）。
+	bPendingGuardedReaction = true;
+	Combat->HandleIncomingHit(AttackPower, /*bGuardedByPlayer*/ true);
+	bPendingGuardedReaction = false;
 }
 
 void AMonsterCharacterBase::ApplyHitStop()
 {
-	if (!bHitStopEnabled || HitStopDuration <= 0.f || State == EMonsterState::Dead)
+	if (State == EMonsterState::Dead)
 	{
 		return;
 	}
-	CustomTimeDilation = HitStopTimeScale;
-	if (USkeletalMeshComponent* M = GetMesh())
-	{
-		M->GlobalAnimRateScale = HitStopTimeScale;
-	}
-	// ワールドタイマーは Actor の CustomTimeDilation の影響を受けないので実時間で復帰する。
-	GetWorldTimerManager().SetTimer(HitStopTimerHandle, this, &AMonsterCharacterBase::EndHitStop,
-		HitStopDuration, false);
-}
-
-void AMonsterCharacterBase::EndHitStop()
-{
-	CustomTimeDilation = 1.f;
-	if (USkeletalMeshComponent* M = GetMesh())
-	{
-		M->GlobalAnimRateScale = 1.f;
-	}
+	UCombatFeedbackLibrary::ApplyHitStop(this, HitStop);
 }
 
 void AMonsterCharacterBase::PlayCameraShake(TSubclassOf<UCameraShakeBase> ShakeClass) const
@@ -807,8 +888,16 @@ void AMonsterCharacterBase::DealDamageToTarget(int32 AttackPower)
 
 void AMonsterCharacterBase::PlayAttackMontage_Implementation(FName AttackId)
 {
-	TObjectPtr<UAnimMontage>* Found = AttackMontages.Find(AttackId);
-	if (!Found || !*Found)
+	// DT_MonsterAttacks.Montage を優先し、未設定なら AttackMontages[AttackId]。
+	bool bRowFound = false;
+	const FMonsterAttackFrameData Row = Attack ? Attack->GetAttackData(AttackId, bRowFound) : FMonsterAttackFrameData();
+	UAnimMontage* Montage = Row.Montage;
+	if (!Montage)
+	{
+		const TObjectPtr<UAnimMontage>* Found = AttackMontages.Find(AttackId);
+		Montage = Found ? Found->Get() : nullptr;
+	}
+	if (!Montage)
 	{
 		return;
 	}
@@ -817,23 +906,23 @@ void AMonsterCharacterBase::PlayAttackMontage_Implementation(FName AttackId)
 	{
 		return;
 	}
+	CurrentAttackMontage = Montage;
 
 	// 仕様書「攻撃詳細」のタイムライン（DT_MonsterAttacks.EndTime）にモンタージュ尺を合わせる。
 	// AM_Monster* は攻撃ウィンドウより長め（例: AM_MonsterAttack5=3.7s / Attack05_1=1.5s）なので、
 	// 等倍で流すと次の一手や硬直に食い込む。再生レートで詰める。
 	float PlayRate = 1.f;
-	if (bScaleAttackMontageToTimeline && Attack)
+	if (bScaleAttackMontageToTimeline)
 	{
-		bool bFound = false;
-		const float TimelineLen = Attack->GetAttackData(AttackId, bFound).EndTime;
-		const float MontageLen = (*Found)->GetPlayLength();
-		if (bFound && TimelineLen > KINDA_SMALL_NUMBER && MontageLen > KINDA_SMALL_NUMBER)
+		const float TimelineLen = Row.EndTime;
+		const float MontageLen = Montage->GetPlayLength();
+		if (bRowFound && TimelineLen > KINDA_SMALL_NUMBER && MontageLen > KINDA_SMALL_NUMBER)
 		{
 			PlayRate = FMath::Clamp(MontageLen / TimelineLen,
 				AttackMontageRateRange.X, AttackMontageRateRange.Y);
 		}
 	}
-	Anim->Montage_Play(*Found, PlayRate);
+	Anim->Montage_Play(Montage, PlayRate);
 }
 
 void AMonsterCharacterBase::PlayAttackVFX_Implementation(FName AttackId)
@@ -842,8 +931,14 @@ void AMonsterCharacterBase::PlayAttackVFX_Implementation(FName AttackId)
 	{
 		return;
 	}
-	TObjectPtr<UNiagaraSystem>* Found = AttackVFX.Find(AttackId);
-	if (!Found || !*Found)
+	bool bRowFound = false;
+	UNiagaraSystem* VFX = Attack ? Attack->GetAttackData(AttackId, bRowFound).AttackVFX.Get() : nullptr;
+	if (!VFX)
+	{
+		const TObjectPtr<UNiagaraSystem>* Found = AttackVFX.Find(AttackId);
+		VFX = Found ? Found->Get() : nullptr;
+	}
+	if (!VFX)
 	{
 		return;
 	}
@@ -863,12 +958,21 @@ void AMonsterCharacterBase::PlayAttackVFX_Implementation(FName AttackId)
 		return;
 	}
 
-	UNiagaraFunctionLibrary::SpawnSystemAttached(*Found, Attach, NAME_None, AttackVFXOffset,
+	UNiagaraFunctionLibrary::SpawnSystemAttached(VFX, Attach, NAME_None, AttackVFXOffset,
 		FRotator::ZeroRotator, EAttachLocation::SnapToTargetIncludingScale, true);
 }
 
 void AMonsterCharacterBase::PlayReaction_Implementation(EMonsterState NewState)
 {
+	// PG-06: 被ガードのやられは専用 Montage（設定時）。
+	if (NewState == EMonsterState::Hitstun && bPendingGuardedReaction && GuardedReactionMontage)
+	{
+		if (UAnimInstance* Anim = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+		{
+			Anim->Montage_Play(GuardedReactionMontage);
+		}
+		return;
+	}
 	if (TObjectPtr<UAnimMontage>* Found = ReactionMontages.Find(NewState))
 	{
 		if (UAnimInstance* Anim = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
@@ -895,6 +999,139 @@ float AMonsterCharacterBase::TakeDamage(float DamageAmount, const FDamageEvent& 
 	return Actual;
 }
 
+void AMonsterCharacterBase::HandleCombatDamaged(const FMonsterDamageResult& Result)
+{
+	if (Result.AppliedDamage > 0)
+	{
+		UCombatFeedbackLibrary::PlayCombatFeedback(this, DamagedFeedback, this, nullptr, GetActorLocation());
+	}
+}
+
+void AMonsterCharacterBase::ReceiveCombatEvent_Implementation(FName EventName)
+{
+	if (EventName == CombatEventNames.HitStart)
+	{
+		if (Attack && State == EMonsterState::Attack) { Attack->NotifyHitStart(); }
+	}
+	else if (EventName == CombatEventNames.HitEnd)
+	{
+		if (Attack) { Attack->NotifyHitEnd(); }
+	}
+	else if (EventName == CombatEventNames.WindupEnd)
+	{
+		BeginWindupHold();
+	}
+	else if (EventName == CombatEventNames.DeathEnd)
+	{
+		if (State == EMonsterState::Dead)
+		{
+			StartDeathRagdoll();
+		}
+	}
+}
+
+void AMonsterCharacterBase::BeginWindupHold()
+{
+	// PG-14: WindupEnd で Montage を PlayRate 0 にし、WindupHoldTime 後に再開。タイムラインも止める。
+	if (bWindupHolding || State != EMonsterState::Attack || !Attack || !Attack->IsAttacking())
+	{
+		return;
+	}
+	const float Hold = Attack->GetActiveData().WindupHoldTime;
+	UAnimInstance* Anim = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+	if (Hold <= 0.f || !Anim || !CurrentAttackMontage)
+	{
+		return;
+	}
+	bWindupHolding = true;
+	SavedWindupPlayRate = Anim->Montage_GetPlayRate(CurrentAttackMontage);
+	Anim->Montage_SetPlayRate(CurrentAttackMontage, 0.f);
+	Attack->SetTimelinePaused(true);
+	GetWorldTimerManager().SetTimer(WindupTimerHandle, this, &AMonsterCharacterBase::EndWindupHold, Hold, false);
+}
+
+void AMonsterCharacterBase::EndWindupHold()
+{
+	if (!bWindupHolding)
+	{
+		return;
+	}
+	bWindupHolding = false;
+	GetWorldTimerManager().ClearTimer(WindupTimerHandle);
+	if (UAnimInstance* Anim = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+	{
+		if (CurrentAttackMontage && Anim->Montage_IsPlaying(CurrentAttackMontage))
+		{
+			Anim->Montage_SetPlayRate(CurrentAttackMontage, SavedWindupPlayRate > 0.f ? SavedWindupPlayRate : 1.f);
+		}
+	}
+	if (Attack)
+	{
+		Attack->SetTimelinePaused(false);
+	}
+}
+
+void AMonsterCharacterBase::StartDeathRagdoll()
+{
+	if (bRagdolled)
+	{
+		return;
+	}
+	bRagdolled = true;
+	USkeletalMeshComponent* M = GetMesh();
+	if (!M)
+	{
+		return;
+	}
+	if (bRagdollOnDeath && M->GetPhysicsAsset())
+	{
+		M->SetCollisionProfileName(TEXT("Ragdoll"));
+		M->SetAllBodiesSimulatePhysics(true);
+		M->SetSimulatePhysics(true);
+		M->WakeAllRigidBodies();
+	}
+	else
+	{
+		// ラグドールしない場合は死亡ポーズで固定。
+		M->bPauseAnims = true;
+	}
+}
+
+void AMonsterCharacterBase::HandleMontageEnded(UAnimMontage* Montage, bool /*bInterrupted*/)
+{
+	if (State != EMonsterState::Dead)
+	{
+		return;
+	}
+	const TObjectPtr<UAnimMontage>* DeathM = ReactionMontages.Find(EMonsterState::Dead);
+	if (DeathM && *DeathM == Montage)
+	{
+		StartDeathRagdoll();
+	}
+}
+
+void AMonsterCharacterBase::TickGetUp(float Dt)
+{
+	GetUpTimer -= Dt;
+	if (GetUpTimer > 0.f)
+	{
+		return;
+	}
+	if (Combat)
+	{
+		Combat->bInvulnerable = false;
+	}
+	if (bResumeHitstunAfterGetUp)
+	{
+		bResumeHitstunAfterGetUp = false;
+		ResumeAfterHitstun();
+	}
+	else
+	{
+		EnterState(EMonsterState::Idle);
+	}
+}
+
 void AMonsterCharacterBase::Tick(float Dt)
 {
 	Super::Tick(Dt);
@@ -910,6 +1147,19 @@ void AMonsterCharacterBase::Tick(float Dt)
 	case EMonsterState::Run:     TickRun(Dt); break;
 	case EMonsterState::Attack:  TickAttack(Dt); break;
 	case EMonsterState::Hitstun: TickHitstun(Dt); break;
+	case EMonsterState::GetUp:   TickGetUp(Dt); break;
+	case EMonsterState::Dead:
+		// 死亡 Montage が末尾に達したらラグドール / ポーズ固定（DeathEnd Notify が無い Montage 向け）。
+		if (!bRagdolled)
+		{
+			const TObjectPtr<UAnimMontage>* DeathM = ReactionMontages.Find(EMonsterState::Dead);
+			UAnimInstance* Anim = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+			if (DeathM && *DeathM && Anim && Anim->Montage_GetPosition(*DeathM) >= (*DeathM)->GetPlayLength() - 0.1f)
+			{
+				StartDeathRagdoll();
+			}
+		}
+		break;
 	default: break;
 	}
 }
@@ -1105,6 +1355,13 @@ void AMonsterCharacterBase::TickHitstun(float Dt)
 	HitstunTimer -= Dt;
 	if (HitstunTimer <= 0.f)
 	{
+		// PG-12: やられも GetUp 対象なら立ち上がってから復帰。
+		if (GetUpSourceStates.Contains(EMonsterState::Hitstun))
+		{
+			bResumeHitstunAfterGetUp = true;
+			EnterState(EMonsterState::GetUp);
+			return;
+		}
 		ResumeAfterHitstun(); // 仕様: 硬直終了 → 次の攻撃処理へ（攻撃5は連鎖しない）
 	}
 }

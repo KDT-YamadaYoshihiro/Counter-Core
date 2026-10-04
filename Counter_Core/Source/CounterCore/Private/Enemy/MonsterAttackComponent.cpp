@@ -120,6 +120,14 @@ void UMonsterAttackComponent::StartAttack(FName AttackId)
 
 	ElapsedTime = 0.f;
 	bHitboxOn = false;
+	bTimelinePaused = false;
+	bResetHitTargets = true;
+	CurrentWindow = INDEX_NONE;
+	SuppressedWindow = INDEX_NONE;
+	WindowsOpened = 0;
+	NotifyWindowCounter = 0;
+	bNotifyHitOn = false;
+	AccumulatedTurnDeg = 0.f;
 	SetComponentTickEnabled(true);
 	PrintAttackEvent(TEXT("攻撃開始"), FColor::Cyan);
 	// 仕様書「攻撃詳細」: モーションは予兆の頭（[0.0s]）から。攻撃モンタージュはここで再生。
@@ -135,6 +143,9 @@ void UMonsterAttackComponent::CancelAttack()
 		bHitboxOn = false;
 		OnToggleHitbox.Broadcast(false);
 	}
+	CurrentWindow = INDEX_NONE;
+	bNotifyHitOn = false;
+	bTimelinePaused = false;
 	if (bWasActive)
 	{
 		PrintAttackEvent(TEXT("攻撃中断"), FColor::Yellow);
@@ -185,9 +196,121 @@ void UMonsterAttackComponent::RotateTowardTarget(float DeltaTime, float RateDegP
 	const FRotator Look = UKismetMathLibrary::FindLookAtRotation(
 		Rotator->GetActorLocation(), TargetActor->GetActorLocation());
 	const FRotator Cur = Rotator->GetActorRotation();
-	const float MaxStep = RateDegPerSec * DeltaTime;
+	float MaxStep = RateDegPerSec * DeltaTime;
+	// PG-15: この攻撃中の回頭量に上限。
+	if (ActiveData.MaxTrackingAngleDeg > 0.f)
+	{
+		MaxStep = FMath::Min(MaxStep, FMath::Max(0.f, ActiveData.MaxTrackingAngleDeg - AccumulatedTurnDeg));
+		if (MaxStep <= 0.f)
+		{
+			return;
+		}
+	}
 	const float NewYaw = FMath::FixedTurn(Cur.Yaw, Look.Yaw, MaxStep);
+	AccumulatedTurnDeg += FMath::Abs(FMath::FindDeltaAngleDegrees(Cur.Yaw, NewYaw));
 	Rotator->SetActorRotation(FRotator(Cur.Pitch, NewYaw, Cur.Roll));
+}
+
+int32 UMonsterAttackComponent::GetCurrentHitDamage() const
+{
+	if (ActiveData.HitWindows.IsValidIndex(CurrentWindow) && ActiveData.HitWindows[CurrentWindow].Damage > 0)
+	{
+		return ActiveData.HitWindows[CurrentWindow].Damage;
+	}
+	return ActiveData.Damage;
+}
+
+void UMonsterAttackComponent::GetHitRange(float& OutFirstStart, float& OutLastEnd) const
+{
+	if (ActiveData.HitWindows.Num() == 0)
+	{
+		OutFirstStart = ActiveData.HitActiveStart;
+		OutLastEnd = ActiveData.HitActiveEnd;
+		return;
+	}
+	OutFirstStart = TNumericLimits<float>::Max();
+	OutLastEnd = 0.f;
+	for (const FMonsterHitWindow& W : ActiveData.HitWindows)
+	{
+		OutFirstStart = FMath::Min(OutFirstStart, W.Start);
+		OutLastEnd = FMath::Max(OutLastEnd, W.End);
+	}
+}
+
+int32 UMonsterAttackComponent::FindTimedWindow() const
+{
+	if (ActiveData.HitWindows.Num() == 0)
+	{
+		return (ElapsedTime >= ActiveData.HitActiveStart && ElapsedTime < ActiveData.HitActiveEnd) ? 0 : INDEX_NONE;
+	}
+	for (int32 i = 0; i < ActiveData.HitWindows.Num(); ++i)
+	{
+		const FMonsterHitWindow& W = ActiveData.HitWindows[i];
+		if (ElapsedTime >= W.Start && ElapsedTime < W.End)
+		{
+			return i;
+		}
+	}
+	return INDEX_NONE;
+}
+
+void UMonsterAttackComponent::UpdateHitbox(int32 WindowIndex)
+{
+	if (WindowIndex != INDEX_NONE && WindowIndex == SuppressedWindow)
+	{
+		WindowIndex = INDEX_NONE; // 打ち切った区間は開かない
+	}
+	if (WindowIndex == CurrentWindow)
+	{
+		return;
+	}
+	if (bHitboxOn)
+	{
+		bHitboxOn = false;
+		OnToggleHitbox.Broadcast(false);
+		PrintAttackEvent(TEXT("判定OFF"), FColor(255, 140, 0));
+	}
+	CurrentWindow = WindowIndex;
+	if (WindowIndex != INDEX_NONE)
+	{
+		// 最初の区間、または再ヒット可の区間でだけ「当てた相手」をリセット。
+		const bool bAllowRehit = !ActiveData.HitWindows.IsValidIndex(WindowIndex) || ActiveData.HitWindows[WindowIndex].bAllowRehit;
+		bResetHitTargets = WindowsOpened == 0 || bAllowRehit;
+		++WindowsOpened;
+		bHitboxOn = true;
+		OnToggleHitbox.Broadcast(true);
+		PrintAttackEvent(TEXT("判定ON"), FColor::Red);
+	}
+}
+
+void UMonsterAttackComponent::NotifyHitStart()
+{
+	if (!bUseNotifyHitWindow || !IsAttacking())
+	{
+		return;
+	}
+	bNotifyHitOn = true;
+	UpdateHitbox(NotifyWindowCounter);
+}
+
+void UMonsterAttackComponent::NotifyHitEnd()
+{
+	if (!bUseNotifyHitWindow || !bNotifyHitOn)
+	{
+		return;
+	}
+	bNotifyHitOn = false;
+	++NotifyWindowCounter;
+	UpdateHitbox(INDEX_NONE);
+}
+
+void UMonsterAttackComponent::EndCurrentHitWindow()
+{
+	if (CurrentWindow != INDEX_NONE)
+	{
+		SuppressedWindow = CurrentWindow;
+		UpdateHitbox(INDEX_NONE);
+	}
 }
 
 void UMonsterAttackComponent::TickComponent(float DeltaTime, ELevelTick TickType,
@@ -205,24 +328,33 @@ void UMonsterAttackComponent::TickComponent(float DeltaTime, ELevelTick TickType
 		return;
 	}
 
+	// PG-14: 溜め中はタイムライン停止。
+	if (bTimelinePaused)
+	{
+		return;
+	}
+
 	ElapsedTime += DeltaTime;
 
-	// 予兆中は軸合わせ。
-	if (ElapsedTime < ActiveData.TurnStopTime)
+	// 予兆中は軸合わせ（PG-15: RootMotion 権限の攻撃では回さない）。
+	if (ElapsedTime < ActiveData.TurnStopTime && ActiveData.RotationAuthority == EMonsterRotationAuthority::Game)
 	{
 		RotateTowardTarget(DeltaTime, ActiveData.TurnRateDegPerSec);
 	}
+
+	float FirstHit = 0.f, LastHit = 0.f;
+	GetHitRange(FirstHit, LastHit);
 
 	// フェーズ進行（時刻ベース）。
 	if (ElapsedTime < ActiveData.TurnStopTime)
 	{
 		SetPhase(EMonsterAttackPhase::Anticipation);
 	}
-	else if (ElapsedTime < ActiveData.HitActiveStart)
+	else if (ElapsedTime < FirstHit)
 	{
 		SetPhase(EMonsterAttackPhase::Committed);
 	}
-	else if (ElapsedTime < ActiveData.HitActiveEnd)
+	else if (ElapsedTime < LastHit)
 	{
 		SetPhase(EMonsterAttackPhase::HitActive);
 	}
@@ -232,6 +364,7 @@ void UMonsterAttackComponent::TickComponent(float DeltaTime, ELevelTick TickType
 	}
 	else
 	{
+		UpdateHitbox(INDEX_NONE);
 		PrintAttackEvent(TEXT("攻撃終了"), FColor::Green);
 		SetPhase(EMonsterAttackPhase::Finished);
 		CurrentPhase = EMonsterAttackPhase::None;
@@ -239,15 +372,10 @@ void UMonsterAttackComponent::TickComponent(float DeltaTime, ELevelTick TickType
 		return;
 	}
 
-	// Hitbox の ON/OFF は判定ウィンドウで厳密に。
-	const bool bShouldHit =
-		ElapsedTime >= ActiveData.HitActiveStart && ElapsedTime < ActiveData.HitActiveEnd;
-	if (bShouldHit != bHitboxOn)
+	// Hitbox の ON/OFF（PG-16: 多段区間。Notify 駆動時は NotifyHitStart / NotifyHitEnd 側）。
+	if (!bUseNotifyHitWindow)
 	{
-		bHitboxOn = bShouldHit;
-		OnToggleHitbox.Broadcast(bHitboxOn);
-		PrintAttackEvent(bHitboxOn ? TEXT("判定ON") : TEXT("判定OFF"),
-			bHitboxOn ? FColor::Red : FColor(255, 140, 0));
+		UpdateHitbox(FindTimedWindow());
 	}
 }
 

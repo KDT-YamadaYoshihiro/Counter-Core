@@ -7,6 +7,10 @@
 #include "TimerManager.h"
 #include "Engine/Engine.h"
 #include "CounterCoreDebug.h"
+#include "Common/CombatFeedbackLibrary.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 
 UPlayerGuardComponent::UPlayerGuardComponent()
 {
@@ -187,11 +191,24 @@ void UPlayerGuardComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 	}
 }
 
-bool UPlayerGuardComponent::HandleGuardedHit(int32 EnemyAttackPower, int32 ShieldChipValue, bool bJustGuard)
+bool UPlayerGuardComponent::IsWithinGuardAngle(const AActor* Attacker) const
 {
-	if (!bGuarding)
+	const AActor* Owner = GetOwner();
+	if (!Attacker || !Owner || GuardableAngleDeg >= 180.f)
 	{
-		return false;
+		return true;
+	}
+	const FVector To = (Attacker->GetActorLocation() - Owner->GetActorLocation()).GetSafeNormal2D();
+	const FVector Fwd = Owner->GetActorForwardVector().GetSafeNormal2D();
+	const float AngleDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(Fwd, To), -1.f, 1.f)));
+	return AngleDeg <= GuardableAngleDeg;
+}
+
+bool UPlayerGuardComponent::HandleGuardedHit(int32 EnemyAttackPower, int32 ShieldChipValue, bool bJustGuard, AActor* Attacker)
+{
+	if (!bGuarding || !IsWithinGuardAngle(Attacker))
+	{
+		return false; // 角度外は通常被弾で処理させる
 	}
 
 	UPlayerCombatComponent* Combat = GetCombat();
@@ -219,6 +236,25 @@ bool UPlayerGuardComponent::HandleGuardedHit(int32 EnemyAttackPower, int32 Shiel
 	ShieldRegenDelayTimer = ShieldRegenDelay;
 
 	ApplyGuardHitStop();
+
+	AActor* Owner = GetOwner();
+	if (GuardSuccessMontage && Owner)
+	{
+		if (USkeletalMeshComponent* Mesh = Owner->FindComponentByClass<USkeletalMeshComponent>())
+		{
+			if (UAnimInstance* Anim = Mesh->GetAnimInstance())
+			{
+				Anim->Montage_Play(GuardSuccessMontage);
+			}
+		}
+	}
+	const FVector FxLoc = Owner ? Owner->GetActorLocation() : FVector::ZeroVector;
+	UCombatFeedbackLibrary::PlayCombatFeedback(this, GuardSuccessFeedback, Owner, nullptr, FxLoc);
+	if (bJust)
+	{
+		UCombatFeedbackLibrary::PlayCombatFeedback(this, JustGuardFeedback, Owner, nullptr, FxLoc);
+	}
+
 	OnGuardSuccess.Broadcast();
 	if (bJust)
 	{
@@ -246,24 +282,5 @@ bool UPlayerGuardComponent::HandleGuardedHit(int32 EnemyAttackPower, int32 Shiel
 
 void UPlayerGuardComponent::ApplyGuardHitStop()
 {
-	if (GuardHitStopDuration <= 0.f)
-	{
-		return;
-	}
-	AActor* Owner = GetOwner();
-	if (!Owner)
-	{
-		return;
-	}
-	Owner->CustomTimeDilation = 0.02f;
-	FTimerDelegate Del;
-	TWeakObjectPtr<AActor> WeakOwner(Owner);
-	Del.BindLambda([WeakOwner]()
-	{
-		if (WeakOwner.IsValid())
-		{
-			WeakOwner->CustomTimeDilation = 1.f;
-		}
-	});
-	Owner->GetWorldTimerManager().SetTimer(HitStopTimerHandle, Del, GuardHitStopDuration, false);
+	UCombatFeedbackLibrary::ApplyHitStop(GetOwner(), GuardHitStop);
 }

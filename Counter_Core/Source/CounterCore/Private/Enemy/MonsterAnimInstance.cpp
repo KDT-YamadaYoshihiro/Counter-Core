@@ -58,12 +58,7 @@ void FMonsterAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float D
 
 UMonsterAnimInstance::UMonsterAnimInstance()
 {
-	static ConstructorHelpers::FObjectFinderOptional<UAnimSequence> IdleSeq(
-		TEXT("/Game/MonsterAnimation/Animation/MM_MonsterIdle.MM_MonsterIdle"));
-	static ConstructorHelpers::FObjectFinderOptional<UAnimSequence> RunSeq(
-		TEXT("/Game/MonsterAnimation/Animation/MM_MonsterRun.MM_MonsterRun"));
-	IdleAnim = IdleSeq.Get();
-	RunAnim  = RunSeq.Get();
+	// Idle / Run は AMonsterCharacterBase::LocomotionIdleAnim / LocomotionRunAnim（BP_Enemy）から渡す。
 }
 
 void UMonsterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)

@@ -3,12 +3,16 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Enemy/MonsterTypes.h"
+#include "Common/AnimNotify_CombatEvent.h"
+#include "Enemy/MonsterCombatComponent.h"
 #include "MonsterCharacterBase.generated.h"
 
 class UMonsterCombatComponent;
 class UMonsterAttackComponent;
+struct FMonsterDamageResult;
 class UBoxComponent;
 class UAnimMontage;
+class UAnimSequence;
 class UPrimitiveComponent;
 class UChildActorComponent;
 class UShapeComponent;
@@ -28,7 +32,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FMonsterStateChanged, EMonsterState
  * BP_Enemy をこのクラスに reparent して使うか、コンポーネントだけ流用する。
  */
 UCLASS(Blueprintable)
-class COUNTERCORE_API AMonsterCharacterBase : public ACharacter
+class COUNTERCORE_API AMonsterCharacterBase : public ACharacter, public ICombatEventReceiver
 {
 	GENERATED_BODY()
 
@@ -99,7 +103,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
 	FVector2D AttackMontageRateRange = FVector2D(0.5f, 2.0f);
 
-	/** 状態 → リアクション用モンタージュ（やられ/スタン/死亡）。未設定なら再生しないだけ。 */
+	/**
+	 * 状態 → リアクション用モンタージュ（やられ/スタン/死亡/立ち上がり）。未設定なら再生しないだけ。
+	 * Dead = 死亡 Montage（PG-11）、GetUp = 立ち上がり Montage（PG-12）。
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
 	TMap<EMonsterState, TObjectPtr<UAnimMontage>> ReactionMontages;
 
@@ -115,21 +122,65 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
 	FVector AttackVFXOffset = FVector::ZeroVector;
 
-	/** 死亡時、死亡モンタージュの代わりにメッシュをラグドール化する（物理アセットが必要）。 */
+	/** 移動ブレンドの Idle ループ。設定すると BeginPlay で UMonsterAnimInstance に渡す（未設定なら AnimInstance 側の値）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	TObjectPtr<UAnimSequence> LocomotionIdleAnim;
+
+	/** 移動ブレンドの走りループ。設定すると BeginPlay で UMonsterAnimInstance に渡す。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	TObjectPtr<UAnimSequence> LocomotionRunAnim;
+
+	/** 死亡時にメッシュをラグドール化する（物理アセットが必要）。死亡 Montage があれば、その終了（または DeathEnd Notify）後にラグドール化。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Death")
 	bool bRagdollOnDeath = true;
 
-	/** 攻撃ヒット / 被弾 / やられ 時にヒットストップ（自分の時間を数フレーム止める）。仕様書 Battle。 */
+	/** 死亡から消滅までの秒（0 = 消えない）。PG-11。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Death", meta = (ClampMin = "0"))
+	float DeathDestroyDelay = 0.f;
+
+	/** 死亡時にカプセルへ適用する Collision プロファイル名（None = Pawn を無視するだけ）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Death")
+	FName DeathCapsuleCollisionProfile = NAME_None;
+
+	/** 死亡時の演出（PG-18）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Death")
+	FCombatFeedback DeathFeedback;
+
+	/** プレイヤーの攻撃を受けたときの演出（PG-18）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
-	bool bHitStopEnabled = true;
+	FCombatFeedback DamagedFeedback;
 
-	/** ヒットストップの実時間（秒）。 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX", meta = (ClampMin = "0"))
-	float HitStopDuration = 0.09f;
+	/** 攻撃ヒット / 被弾 / やられ 時のヒットストップ既定値（PG-19）。攻撃別は DT の HitStop が優先。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	FHitStopSettings HitStop;
 
-	/** ヒットストップ中の時間スケール（0 に近いほど完全停止）。 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX", meta = (ClampMin = "0", ClampMax = "1"))
-	float HitStopTimeScale = 0.02f;
+	// --- 被ガード（PG-06 M側）---
+
+	/** true: 攻撃をガードされたらやられ（被ガード Montage）へ。false: 判定を打ち切るだけで攻撃継続（ボス用）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Guarded")
+	bool bReactToGuard = true;
+
+	/** 被ガード時に 1 回再生する Montage。未設定なら ReactionMontages[やられ]。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Guarded")
+	TObjectPtr<UAnimMontage> GuardedReactionMontage;
+
+	/** true: 被ガードのやられ時間を Montage の尺に合わせる。false: MonsterCombat.HitstunDuration。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Guarded")
+	bool bGuardedReactionUsesMontageLength = false;
+
+	// --- 立ち上がり（PG-12）---
+
+	/** この状態が終わったら GetUp を挟む（やられ / スタン）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|GetUp")
+	TArray<EMonsterState> GetUpSourceStates = { EMonsterState::Stun };
+
+	/** 立ち上がり中は無敵。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|GetUp")
+	bool bInvulnerableDuringGetUp = true;
+
+	/** Combat Event Notify の名前（HitStart / HitEnd / WindupEnd / DeathEnd）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
+	FCombatEventNames CombatEventNames;
 
 	/** 敵の攻撃がプレイヤーに当たったときのカメラシェイク。仕様書 Battle。代用: BP_CameraShake_Hit_Player。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|FX")
@@ -231,9 +282,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Monster|Combat")
 	void DealDamageToTarget(int32 AttackPower);
 
-	/** ヒットストップを発火（自分の CustomTimeDilation とアニメ速度を一時的に落とす）。 */
+	/** ヒットストップを発火（HitStop 既定値）。 */
 	UFUNCTION(BlueprintCallable, Category = "Monster|FX")
 	void ApplyHitStop();
+
+	/** PG-06: 自分の攻撃がガードされた。判定を打ち切り、bReactToGuard なら被ガードやられへ。 */
+	UFUNCTION(BlueprintCallable, Category = "Monster|Combat")
+	void OnAttackGuarded(int32 AttackPower);
+
+	// ICombatEventReceiver
+	virtual void ReceiveCombatEvent_Implementation(FName EventName) override;
 
 	/**
 	 * 武器（BP_Weapon）がヒットを検知したときに呼ばれる互換フック。
@@ -280,6 +338,13 @@ protected:
 	void TickRun(float Dt);
 	void TickAttack(float Dt);
 	void TickHitstun(float Dt);
+	void TickGetUp(float Dt);
+	void BeginWindupHold();
+	void EndWindupHold();
+	void StartDeathRagdoll();
+	void StopTrail();
+	UFUNCTION()
+	void HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
 	// 行動パターン（仕様書どおり順番に実行）
 	void BeginActionStep();          // ActionLoop[ActionLoopIndex] を評価
@@ -291,16 +356,17 @@ protected:
 	bool RollComboProbability(const FMonsterComboData& C) const;
 	void PrintAI(const FString& Msg, const FColor& Color) const;
 	void PollDebugKeys(); // U / I / O / N / M
-	void EndHitStop();
 	void PlayCameraShake(TSubclassOf<UCameraShakeBase> ShakeClass) const;
 
-	FTimerHandle HitStopTimerHandle;
+	FTimerHandle WindupTimerHandle;
 
 	// 攻撃コンポーネントのイベント
 	UFUNCTION()
 	void HandleAttackFinished();
 	UFUNCTION()
 	void HandleCombatStateRequest(EMonsterState Requested);
+	UFUNCTION()
+	void HandleCombatDamaged(const FMonsterDamageResult& Result);
 	UFUNCTION()
 	void HandleToggleHitbox(bool bEnable);
 	UFUNCTION()
@@ -346,6 +412,22 @@ private:
 	float HitstunTimer = 0.f;
 	FVector HitstunKnockbackDir = FVector::ZeroVector;
 	bool bInterruptedAttackNoChain = false; // 中断された攻撃が「やられ連鎖しない」（攻撃5）
+	bool bPendingGuardedReaction = false;   // 次のやられは被ガードによるもの
+
+	// GetUp（PG-12）
+	float GetUpTimer = 0.f;
+	bool bResumeHitstunAfterGetUp = false;
+
+	// 溜め（PG-14）
+	bool bWindupHolding = false;
+	float SavedWindupPlayRate = 1.f;
+
+	// 死亡（PG-11）
+	bool bRagdolled = false;
+
+	UPROPERTY()
+	TObjectPtr<UAnimMontage> CurrentAttackMontage;
+	FName CurrentTrailTag = NAME_None;
 
 	// この攻撃で既にヒットさせた相手（多段ヒット防止、判定ONごとにクリア）
 	UPROPERTY()

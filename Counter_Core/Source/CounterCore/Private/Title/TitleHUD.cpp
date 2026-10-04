@@ -11,6 +11,8 @@
 #include "EngineUtils.h"
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Engine/Texture2D.h"
+#include "Misc/App.h"
 
 namespace
 {
@@ -99,6 +101,32 @@ void ATitleHUD::DrawHUD()
 			: 1.f;
 	}
 	const float S = UIScale;
+
+	// PG-21: 開始プロンプト（ゲームパッド接続で文言 / 画像を切替）。
+	if (bDrawStartPrompt)
+	{
+		ATitleSceneController* TC = GetController();
+		if (TC && !TC->IsQuitPromptOpen() && !TC->HasStartBeenRequested())
+		{
+			FLinearColor Col = StartPromptColor;
+			if (StartPromptBlinkPeriod > 0.f)
+			{
+				const double T = FApp::GetCurrentTime();
+				Col.A *= 0.55f + 0.45f * FMath::Cos(T * 2.0 * PI / StartPromptBlinkPeriod);
+			}
+			const float CX = VW * StartPromptAnchor.X;
+			const float CY = VH * StartPromptAnchor.Y;
+			if (UTexture2D* Img = TC->GetStartPromptImage())
+			{
+				const float W = StartPromptImageSize.X * S, H = StartPromptImageSize.Y * S;
+				DrawTexture(Img, CX - W * 0.5f, CY - H * 0.5f, W, H, 0.f, 0.f, 1.f, 1.f, Col);
+			}
+			else
+			{
+				DrawStr(TC->GetStartPromptText().ToString(), CX, CY, FMath::RoundToInt(StartPromptPixelSize * S), Col, true);
+			}
+		}
+	}
 
 	ATitleSceneController* Ctl = GetController();
 	const bool bPrompt = Ctl && Ctl->IsQuitPromptOpen();

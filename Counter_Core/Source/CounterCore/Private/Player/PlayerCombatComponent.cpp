@@ -8,6 +8,10 @@
 #include "Animation/AnimMontage.h"
 #include "Camera/CameraShakeBase.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Components/CapsuleComponent.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Common/CombatFeedbackLibrary.h"
 
 UPlayerCombatComponent::UPlayerCombatComponent()
 {
@@ -95,34 +99,82 @@ FPlayerDamageResult UPlayerCombatComponent::TakeIncomingHit(int32 AttackPower, b
 	const int32 Dmg = CalculateIncomingDamage(AttackPower);
 	Hp = FMath::Max(0, Hp - Dmg);
 	Result.AppliedDamage = Dmg;
+	Result.bWasLethal = Hp <= 0;
 	OnHpChanged.Broadcast(Hp, MaxHp);
+	PlayDamagedShake();
+	UCombatFeedbackLibrary::PlayCombatFeedback(this, DamagedFeedback, GetOwner(), nullptr,
+		GetOwner() ? GetOwner()->GetActorLocation() : FVector::ZeroVector);
+
+	if (Result.bWasLethal)
+	{
+		// PG-04: HP0 → Dead。被弾モーションは出さず死亡 Montage を 1 回だけ。
+		OnDamaged.Broadcast(Result);
+		EnterDeath();
+		return Result;
+	}
 
 	// 仕様: 被弾モーション + 被ダメージ後の無敵時間。
 	InvulnTimer = FMath::Max(InvulnTimer, PostHitInvulnTime);
 	HitReactTimer = HitReactTime;
 	SetCombatState(EPlayerCombatState::Hit);
 	PlayMontage(HitReactMontage);
-	PlayDamagedShake();
 
 	OnDamaged.Broadcast(Result);
-
-	if (Hp <= 0)
-	{
-		Result.bWasLethal = true;
-		PlayMontage(DeathMontage);
-		OnDied.Broadcast(); // 敗北判定は GM / BattleDirector 側
-	}
 	return Result;
+}
+
+void UPlayerCombatComponent::EnterDeath()
+{
+	if (State == EPlayerCombatState::Dead)
+	{
+		return;
+	}
+	Hp = 0;
+	HitReactTimer = 0.f;
+	StunTimer = 0.f;
+	InvulnTimer = 0.f;
+	bInvulnerable = false;
+	SetCombatState(EPlayerCombatState::Dead);
+
+	if (ACharacter* Char = Cast<ACharacter>(GetOwner()))
+	{
+		if (bDisableMovementOnDeath)
+		{
+			if (UCharacterMovementComponent* Move = Char->GetCharacterMovement())
+			{
+				Move->StopMovementImmediately();
+				Move->DisableMovement();
+			}
+		}
+		if (!DeathCollisionProfile.IsNone() && Char->GetCapsuleComponent())
+		{
+			Char->GetCapsuleComponent()->SetCollisionProfileName(DeathCollisionProfile);
+		}
+	}
+
+	// 他の Montage（攻撃・被弾）を止めてから死亡 Montage を 1 回。
+	if (USkeletalMeshComponent* Mesh = GetOwner() ? GetOwner()->FindComponentByClass<USkeletalMeshComponent>() : nullptr)
+	{
+		if (UAnimInstance* Anim = Mesh->GetAnimInstance())
+		{
+			Anim->StopAllMontages(0.1f);
+		}
+	}
+	PlayMontage(DeathMontage);
+	UCombatFeedbackLibrary::PlayCombatFeedback(this, DeathFeedback, GetOwner(), nullptr,
+		GetOwner() ? GetOwner()->GetActorLocation() : FVector::ZeroVector);
+
+	OnDied.Broadcast(); // 敗北判定・リザルト遷移は BattleDirector（ResultTransitionDelay）
 }
 
 void UPlayerCombatComponent::SetCombatState(EPlayerCombatState NewState)
 {
-	if (State == NewState)
+	if (State == NewState || State == EPlayerCombatState::Dead)
 	{
-		return;
+		return; // 死亡は終端状態
 	}
-	// 気絶中は本人の解除以外の遷移を受け付けない。
-	if (State == EPlayerCombatState::Stun && NewState != EPlayerCombatState::Normal)
+	// 気絶中は本人の解除（と死亡）以外の遷移を受け付けない。
+	if (State == EPlayerCombatState::Stun && NewState != EPlayerCombatState::Normal && NewState != EPlayerCombatState::Dead)
 	{
 		return;
 	}

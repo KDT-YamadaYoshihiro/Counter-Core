@@ -9,6 +9,9 @@
 #include "UObject/UObjectIterator.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 
 ATitleSceneController::ATitleSceneController()
 {
@@ -26,6 +29,72 @@ void ATitleSceneController::BeginPlay()
 	PivotWorld = GetActorLocation();
 	Angle = StartAngleDegrees;
 	SetupCamera();
+	UpdateGamepadState(/*bForceBroadcast*/ true);
+}
+
+void ATitleSceneController::UpdateGamepadState(bool bForceBroadcast)
+{
+	// PG-21: 起動時＋ホットプラグ（毎フレーム確認）。
+	const bool bNow = FSlateApplication::IsInitialized() && FSlateApplication::Get().IsGamepadAttached();
+	if (bNow != bGamepadConnected || bForceBroadcast)
+	{
+		bGamepadConnected = bNow;
+		OnGamepadConnectionChanged.Broadcast(bGamepadConnected);
+	}
+}
+
+bool ATitleSceneController::RequestStart()
+{
+	if (bStartRequested)
+	{
+		return false; // 1 回だけ
+	}
+	bStartRequested = true;
+	if (StartSound)
+	{
+		UGameplayStatics::PlaySound2D(this, StartSound);
+	}
+	OnStartRequested.Broadcast();
+	if (bHandleStartInput && !StartLevelName.IsNone())
+	{
+		if (StartTransitionDelay > 0.f)
+		{
+			GetWorldTimerManager().SetTimer(StartTimer, this, &ATitleSceneController::OpenStartLevel, StartTransitionDelay, false);
+		}
+		else
+		{
+			OpenStartLevel();
+		}
+	}
+	return true;
+}
+
+void ATitleSceneController::OpenStartLevel()
+{
+	UGameplayStatics::OpenLevel(this, StartLevelName);
+}
+
+void ATitleSceneController::PollStartInput()
+{
+	if (!bHandleStartInput || bStartRequested || bQuitPromptOpen)
+	{
+		return;
+	}
+	APlayerController* PC = GetPC();
+	if (!PC)
+	{
+		return;
+	}
+	// 接続中の入力系に対応するキーだけ受け付ける。
+	const TArray<FKey>& Keys = bGamepadConnected ? GamepadStartKeys : KeyboardStartKeys;
+	for (const FKey& K : Keys)
+	{
+		if (PC->WasInputKeyJustPressed(K))
+		{
+			RequestStart();
+			return;
+		}
+	}
 }
 
 void ATitleSceneController::SetupCamera()
@@ -78,7 +147,9 @@ void ATitleSceneController::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	Elapsed += DeltaSeconds;
 	UpdateOrbit(DeltaSeconds);
+	UpdateGamepadState(false);
 	PollQuitInput();
+	PollStartInput();
 }
 
 void ATitleSceneController::SetTitleWidgetHidden(bool bWantHidden)

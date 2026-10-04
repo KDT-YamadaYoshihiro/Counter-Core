@@ -64,6 +64,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Debug", meta = (ClampMin = "0.5"))
 	float AttackEventPrintDuration = 4.f;
 
+	/**
+	 * PG-03: true なら判定 ON/OFF を Montage の Combat Event（HitStart / HitEnd）で行う（NotifyHitStart / NotifyHitEnd）。
+	 * false なら DT の秒数（HitWindows / HitActiveStart-End）。フェーズ進行・終了は常に DT の秒数。
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Monster|Attack")
+	bool bUseNotifyHitWindow = false;
+
 	// --- クエリ ---
 
 	/**
@@ -94,6 +101,35 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Monster|Attack")
 	bool IsHitstunAllowed() const;
+
+	/** 進行中の攻撃データ。 */
+	UFUNCTION(BlueprintPure, Category = "Monster|Attack")
+	FMonsterAttackFrameData GetActiveData() const { return ActiveData; }
+
+	/** PG-16: 現在の判定区間の攻撃力（区間 Damage>0 ならそれ、無ければ行の Damage）。 */
+	UFUNCTION(BlueprintPure, Category = "Monster|Attack")
+	int32 GetCurrentHitDamage() const;
+
+	/** PG-16: 直前の判定 ON で「ヒット済み相手」をリセットすべきか。 */
+	UFUNCTION(BlueprintPure, Category = "Monster|Attack")
+	bool ShouldResetHitTargets() const { return bResetHitTargets; }
+
+	/** PG-14: タイムラインを一時停止（溜め）。 */
+	UFUNCTION(BlueprintCallable, Category = "Monster|Attack")
+	void SetTimelinePaused(bool bPaused) { bTimelinePaused = bPaused; }
+
+	UFUNCTION(BlueprintPure, Category = "Monster|Attack")
+	bool IsTimelinePaused() const { return bTimelinePaused; }
+
+	/** PG-03: Notify 駆動時の判定 ON / OFF。 */
+	UFUNCTION(BlueprintCallable, Category = "Monster|Attack")
+	void NotifyHitStart();
+	UFUNCTION(BlueprintCallable, Category = "Monster|Attack")
+	void NotifyHitEnd();
+
+	/** PG-06: ガードされた等で、今の判定区間を次の区間まで打ち切る。 */
+	UFUNCTION(BlueprintCallable, Category = "Monster|Attack")
+	void EndCurrentHitWindow();
 
 	// --- 実行 ---
 
@@ -143,6 +179,9 @@ private:
 	void RotateTowardTarget(float DeltaTime, float RateDegPerSec);
 	void DrawDebugVisualization() const;
 	void PrintAttackEvent(const TCHAR* Label, const FColor& Color) const;
+	void UpdateHitbox(int32 WindowIndex);
+	void GetHitRange(float& OutFirstStart, float& OutLastEnd) const;
+	int32 FindTimedWindow() const;
 
 	UPROPERTY()
 	TObjectPtr<AActor> TargetActor;
@@ -151,4 +190,12 @@ private:
 	EMonsterAttackPhase CurrentPhase = EMonsterAttackPhase::None;
 	float ElapsedTime = 0.f;
 	bool bHitboxOn = false;
+	bool bTimelinePaused = false;
+	bool bResetHitTargets = true;
+	int32 CurrentWindow = INDEX_NONE;   // 判定中の区間（無し = INDEX_NONE）
+	int32 SuppressedWindow = INDEX_NONE;// EndCurrentHitWindow で打ち切った区間
+	int32 WindowsOpened = 0;            // この攻撃で開いた区間数
+	int32 NotifyWindowCounter = 0;      // Notify 駆動時の区間番号
+	bool bNotifyHitOn = false;
+	float AccumulatedTurnDeg = 0.f;     // PG-15
 };

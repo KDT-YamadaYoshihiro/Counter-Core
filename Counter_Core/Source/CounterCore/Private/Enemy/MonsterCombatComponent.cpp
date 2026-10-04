@@ -36,7 +36,7 @@ FMonsterDamageResult UMonsterCombatComponent::HandleIncomingHit(int32 AttackPowe
 	FMonsterDamageResult Result;
 	Result.bGuarded = bGuardedByPlayer;
 
-	if (!IsAlive())
+	if (!IsAlive() || bInvulnerable)
 	{
 		return Result;
 	}

@@ -23,6 +23,9 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "CounterCoreDebug.h"
+#include "Common/CombatFeedbackLibrary.h"
+#include "Player/PlayerCameraComponent.h"
+#include "Engine/DataTable.h"
 
 UPlayerActionComponent::UPlayerActionComponent()
 {
@@ -115,7 +118,45 @@ void UPlayerActionComponent::BeginPlay()
 		Combat->OnStateChanged.AddDynamic(this, &UPlayerActionComponent::HandleCombatStateChanged);
 	}
 
+	PotionCount = FMath::Clamp(InitialPotionCount, 0, MaxPotionCount);
+	OnPotionCountChanged.Broadcast(PotionCount, MaxPotionCount);
+
 	BindInput();
+}
+
+UAnimInstance* UPlayerActionComponent::GetAnimInstance() const
+{
+	if (USkeletalMeshComponent* Mesh = GetOwner() ? GetOwner()->FindComponentByClass<USkeletalMeshComponent>() : nullptr)
+	{
+		return Mesh->GetAnimInstance();
+	}
+	return nullptr;
+}
+
+void UPlayerActionComponent::AddPotion(int32 Delta)
+{
+	const int32 New = FMath::Clamp(PotionCount + Delta, 0, MaxPotionCount);
+	if (New != PotionCount)
+	{
+		PotionCount = New;
+		OnPotionCountChanged.Broadcast(PotionCount, MaxPotionCount);
+	}
+}
+
+void UPlayerActionComponent::SetMoveInputIgnored(bool bIgnore)
+{
+	if (bMoveInputIgnored == bIgnore)
+	{
+		return;
+	}
+	bMoveInputIgnored = bIgnore;
+	if (APawn* Pawn = Cast<APawn>(GetOwner()))
+	{
+		if (AController* C = Pawn->GetController())
+		{
+			C->SetIgnoreMoveInput(bIgnore); // カウンタ式なのでガード等と衝突しない
+		}
+	}
 }
 
 void UPlayerActionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -250,6 +291,19 @@ bool UPlayerActionComponent::CanStartAction(EPlayerActionType Action) const
 		return false;
 	}
 
+	// PG-05: 回復中は許可フラグの操作だけ。
+	if (CurrentAction == EPlayerActionType::Heal)
+	{
+		switch (Action)
+		{
+		case EPlayerActionType::Dodge:  return bAllowDodgeWhileHealing;
+		case EPlayerActionType::Guard:  return bAllowGuardWhileHealing;
+		case EPlayerActionType::Attack: return bAllowAttackWhileHealing;
+		case EPlayerActionType::Move:   return bAllowMoveWhileHealing;
+		default:                        return false;
+		}
+	}
+
 	// 優先度: 移動 < ガード < 攻撃 < 回避。上位は下位を割り込める。
 	auto Prio = [](EPlayerActionType A) -> int32
 	{
@@ -257,6 +311,7 @@ bool UPlayerActionComponent::CanStartAction(EPlayerActionType Action) const
 		{
 		case EPlayerActionType::Dodge:  return 4;
 		case EPlayerActionType::Attack: return 3;
+		case EPlayerActionType::Heal:   return 3;
 		case EPlayerActionType::Guard:  return 2;
 		case EPlayerActionType::Move:   return 1;
 		default:                        return 0;
@@ -354,6 +409,8 @@ void UPlayerActionComponent::StartAttackRow(FName AttackId)
 	AttackElapsed = 0.f;
 	bComboQueued = false;
 	bMeleeActive = false;
+	bAttackStepActive = true;
+	CurrentPlayRate = 1.f;
 	HitActorsThisSwing.Reset();
 
 	SetCurrentAction(EPlayerActionType::Attack);
@@ -364,20 +421,27 @@ void UPlayerActionComponent::StartAttackRow(FName AttackId)
 
 	if (CurrentAttackRow.Montage)
 	{
-		if (USkeletalMeshComponent* Mesh = GetOwner() ? GetOwner()->FindComponentByClass<USkeletalMeshComponent>() : nullptr)
+		if (UAnimInstance* Anim = GetAnimInstance())
 		{
-			if (UAnimInstance* Anim = Mesh->GetAnimInstance())
+			// PlayRate > 0 なら DT 指定（PG-09 の 1:1 同期）、0 なら従来どおり EndTime に収まるよう自動調整。
+			const float MontageLen = CurrentAttackRow.Montage->GetPlayLength();
+			if (CurrentAttackRow.PlayRate > 0.f)
 			{
-				// モンタージュがこの攻撃の長さ（EndTime）に収まるよう再生レートを調整。
-				// 仮アセットが EndTime より長いと毎コンボで途中リスタートして痙攣して見えるため。
-				const float MontageLen = CurrentAttackRow.Montage->GetPlayLength();
-				const float Rate = (CurrentAttackRow.EndTime > 0.05f && MontageLen > 0.05f)
+				CurrentPlayRate = CurrentAttackRow.PlayRate;
+			}
+			else
+			{
+				CurrentPlayRate = (CurrentAttackRow.EndTime > 0.05f && MontageLen > 0.05f)
 					? FMath::Clamp(MontageLen / CurrentAttackRow.EndTime, 0.2f, 3.f)
 					: 1.f;
-				Anim->Montage_Play(CurrentAttackRow.Montage, Rate);
 			}
+			Anim->Montage_Play(CurrentAttackRow.Montage, CurrentPlayRate);
 		}
 	}
+
+	AActor* Owner = GetOwner();
+	UCombatFeedbackLibrary::PlayCombatFeedback(this, CurrentAttackRow.SwingFeedback, Owner, MeleeHitbox,
+		Owner ? Owner->GetActorLocation() : FVector::ZeroVector);
 
 	OnAttackStarted.Broadcast(AttackId);
 	PrintAction(FString::Printf(TEXT("攻撃 %s（威力%d / スタン%d）"), *AttackId.ToString(), CurrentAttackRow.Power, CurrentAttackRow.StunValue), FColor::Cyan);
@@ -387,35 +451,83 @@ void UPlayerActionComponent::TickAttack(float Dt)
 {
 	AttackElapsed += Dt;
 
-	const bool bShouldHit = AttackElapsed >= CurrentAttackRow.HitActiveStart && AttackElapsed < CurrentAttackRow.HitActiveEnd;
-	if (bShouldHit != bMeleeActive)
+	// PG-03: Notify 駆動のときは判定 ON/OFF を ReceiveCombatEvent に任せる（Montage がある行のみ）。
+	const bool bNotifyDriven = bUseNotifyHitWindow && CurrentAttackRow.Montage != nullptr;
+	if (!bNotifyDriven)
 	{
-		bMeleeActive = bShouldHit;
-		SetMeleeHitboxActive(bMeleeActive);
-		if (bMeleeActive)
+		const bool bShouldHit = AttackElapsed >= CurrentAttackRow.HitActiveStart && AttackElapsed < CurrentAttackRow.HitActiveEnd;
+		if (bShouldHit != bMeleeActive)
 		{
-			HitActorsThisSwing.Reset();
+			bMeleeActive = bShouldHit;
+			SetMeleeHitboxActive(bMeleeActive);
 		}
 	}
 
-	if (AttackElapsed >= CurrentAttackRow.EndTime)
+	// PG-08: InterruptibleStartFrame 到達後、受付済みの入力があれば即次段。
+	if (bComboQueued && CurrentAttackRow.NextComboId != NAME_None && CurrentAttackRow.InterruptibleStartFrame >= 0 && FrameRate > 0.f)
+	{
+		const float MontageTime = AttackElapsed * (CurrentAttackRow.Montage ? CurrentPlayRate : 1.f);
+		if (MontageTime >= CurrentAttackRow.InterruptibleStartFrame / FrameRate)
+		{
+			const FName Next = CurrentAttackRow.NextComboId;
+			EndCurrentAttackStep(/*bStopMontage*/ false); // 次段の Montage_Play がブレンドで差し替える
+			StartAttackRow(Next);
+			return;
+		}
+	}
+
+	if (!bNotifyDriven && AttackElapsed >= CurrentAttackRow.EndTime)
 	{
 		if (bComboQueued && CurrentAttackRow.NextComboId != NAME_None)
 		{
-			StartAttackRow(CurrentAttackRow.NextComboId); // 派生（ゲージ消費なし）
+			const FName Next = CurrentAttackRow.NextComboId;
+			EndCurrentAttackStep(false);
+			StartAttackRow(Next); // 派生（ゲージ消費なし）
 		}
 		else
 		{
 			FinishAttack();
 		}
 	}
+	else if (bNotifyDriven && AttackElapsed >= CurrentAttackRow.EndTime + 1.f)
+	{
+		// 安全弁: AttackEnd Notify が無い Montage でも EndTime + 1 秒で必ず終える。
+		FinishAttack();
+	}
+}
+
+void UPlayerActionComponent::EndCurrentAttackStep(bool bStopMontage)
+{
+	if (!bAttackStepActive)
+	{
+		return; // 1 回だけ
+	}
+	bAttackStepActive = false;
+
+	SetMeleeHitboxActive(false);
+	bMeleeActive = false;
+	bComboQueued = false;
+	HitActorsThisSwing.Reset();
+
+	// トレイルは攻撃段の終了で必ず OFF。
+	UCombatFeedbackLibrary::SetTrailActive(GetOwner(), CurrentAttackRow.SwingFeedback.TrailComponentTag, false);
+
+	// Montage を止めれば RootMotion も止まる。
+	if (bStopMontage && CurrentAttackRow.Montage)
+	{
+		if (UAnimInstance* Anim = GetAnimInstance())
+		{
+			if (Anim->Montage_IsPlaying(CurrentAttackRow.Montage))
+			{
+				Anim->Montage_Stop(AttackBlendOutTime, CurrentAttackRow.Montage);
+			}
+		}
+	}
 }
 
 void UPlayerActionComponent::FinishAttack()
 {
-	SetMeleeHitboxActive(false);
-	bMeleeActive = false;
-	bComboQueued = false;
+	EndCurrentAttackStep(true);
 	CurrentAttackId = NAME_None;
 	ComboCooldownTimer = PostComboCooldown; // 連打での即リスタート痙攣を防ぐ
 	SetCurrentAction(EPlayerActionType::None);
@@ -432,19 +544,85 @@ void UPlayerActionComponent::CancelAttack()
 		return;
 	}
 	PrintAction(TEXT("攻撃中断（相打ち / 割り込み）"), FColor::Yellow);
-	SetMeleeHitboxActive(false);
-	bMeleeActive = false;
-	bComboQueued = false;
+	EndCurrentAttackStep(true);
 	CurrentAttackId = NAME_None;
 	SetCurrentAction(EPlayerActionType::None);
 	// Combat 状態は呼び出し側（被弾処理）が Hit にしている想定なので触らない。
-	if (USkeletalMeshComponent* Mesh = GetOwner() ? GetOwner()->FindComponentByClass<USkeletalMeshComponent>() : nullptr)
+}
+
+void UPlayerActionComponent::ReceiveCombatEvent_Implementation(FName EventName)
+{
+	if (CurrentAction != EPlayerActionType::Attack || !bUseNotifyHitWindow || !CurrentAttackRow.Montage)
 	{
-		if (UAnimInstance* Anim = Mesh->GetAnimInstance())
+		return;
+	}
+	if (EventName == CombatEventNames.HitStart)
+	{
+		if (!bMeleeActive)
 		{
-			Anim->Montage_Stop(0.1f);
+			bMeleeActive = true;
+			SetMeleeHitboxActive(true);
 		}
 	}
+	else if (EventName == CombatEventNames.HitEnd)
+	{
+		if (bMeleeActive)
+		{
+			bMeleeActive = false;
+			SetMeleeHitboxActive(false);
+		}
+	}
+	else if (EventName == CombatEventNames.AttackEnd)
+	{
+		if (bComboQueued && CurrentAttackRow.NextComboId != NAME_None)
+		{
+			const FName Next = CurrentAttackRow.NextComboId;
+			EndCurrentAttackStep(false);
+			StartAttackRow(Next);
+		}
+		else
+		{
+			FinishAttack();
+		}
+	}
+}
+
+void UPlayerActionComponent::SyncAttackTableToMontages()
+{
+	if (!AttackDataTable || FrameRate <= 0.f)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[PlayerAction] SyncAttackTableToMontages: AttackDataTable / FrameRate 未設定"));
+		return;
+	}
+	AttackDataTable->Modify();
+	int32 Updated = 0;
+	for (const TPair<FName, uint8*>& Pair : AttackDataTable->GetRowMap())
+	{
+		FPlayerAttackRow* Row = reinterpret_cast<FPlayerAttackRow*>(Pair.Value);
+		if (!Row || !Row->Montage)
+		{
+			continue;
+		}
+		if (Row->PlayRate <= 0.f)
+		{
+			Row->PlayRate = SyncPlayRate;
+		}
+		const float Len = Row->Montage->GetPlayLength();
+		Row->EndTime = Len / Row->PlayRate;
+		const float RawFrame = Len * FrameRate * AutoInterruptibleRatio;
+		switch (InterruptibleFrameRounding)
+		{
+		case EFrameRounding::Ceil:  Row->InterruptibleStartFrame = FMath::CeilToInt(RawFrame); break;
+		case EFrameRounding::Round: Row->InterruptibleStartFrame = FMath::RoundToInt(RawFrame); break;
+		default:                    Row->InterruptibleStartFrame = FMath::FloorToInt(RawFrame); break;
+		}
+		++Updated;
+	}
+	AttackDataTable->MarkPackageDirty();
+#if WITH_EDITOR
+	AttackDataTable->OnDataTableChanged().Broadcast();
+#endif
+	UE_LOG(LogTemp, Log, TEXT("[PlayerAction] SyncAttackTableToMontages: %d 行を更新（保存は手動）"), Updated);
 }
 
 // --------------------------------------------------------------------------
@@ -462,43 +640,82 @@ void UPlayerActionComponent::TryDodge()
 	{
 		CancelAttack();
 	}
+	if (CurrentAction == EPlayerActionType::Heal)
+	{
+		EndHeal(/*bInterrupted*/ true);
+	}
 	if (Guard && Guard->IsGuarding())
 	{
 		Guard->StopGuard();
 	}
 
-	// 方向: 移動入力があればその方向、無ければ後方。
-	const AActor* Owner = GetOwner();
-	FVector Dir = Owner ? -Owner->GetActorForwardVector() : FVector::ZeroVector;
-	if (Owner && !LastMoveInput.IsNearlyZero())
+	// PG-20: 方向決め。BP から SetMoveInput されていればそれを基準で回し、無ければ Pawn の最終移動入力（ワールド）。
+	AActor* Owner = GetOwner();
+	APawn* Pawn = Cast<APawn>(Owner);
+	FVector WorldInput = FVector::ZeroVector;
+	if (Owner && LastMoveInput.Size() > DodgeInputDeadZone)
 	{
-		const FVector Fwd = Owner->GetActorForwardVector();
-		const FVector Right = Owner->GetActorRightVector();
-		Dir = (Fwd * LastMoveInput.Y + Right * LastMoveInput.X).GetSafeNormal();
+		float Yaw = Owner->GetActorRotation().Yaw;
+		if (DodgeInputBasis == EDodgeInputBasis::Camera && Pawn && Pawn->GetController())
+		{
+			Yaw = Pawn->GetController()->GetControlRotation().Yaw;
+		}
+		const FRotator Basis(0.f, Yaw, 0.f);
+		const FRotationMatrix M(Basis);
+		WorldInput = M.GetUnitAxis(EAxis::X) * LastMoveInput.Y + M.GetUnitAxis(EAxis::Y) * LastMoveInput.X;
+	}
+	else if (Pawn)
+	{
+		const FVector V = Pawn->GetLastMovementInputVector();
+		if (V.Size2D() > DodgeInputDeadZone)
+		{
+			WorldInput = V;
+		}
+	}
+
+	const bool bHasInput = !WorldInput.IsNearlyZero();
+	FVector Dir = FVector::ZeroVector;
+	if (bHasInput)
+	{
+		Dir = WorldInput.GetSafeNormal2D();
+	}
+	else if (Owner)
+	{
+		Dir = DodgeNoInputDirection == EDodgeNoInputDirection::Forward ? Owner->GetActorForwardVector() : -Owner->GetActorForwardVector();
 	}
 	DodgeDir = Dir.GetSafeNormal2D();
 	DodgeElapsed = 0.f;
 	bDodgeIFrame = false;
 
+	// 入力方向へ即回転。ロックオン中は設定次第でターゲットを向いたまま。
+	if (Owner && bFaceDodgeDirection && bHasInput)
+	{
+		const UPlayerCameraComponent* Cam = Owner->FindComponentByClass<UPlayerCameraComponent>();
+		const bool bKeepTarget = Cam && Cam->IsLockedOn() && Cam->GetLockTarget()
+			&& LockOnDodgeFacing == ELockOnDodgeFacing::KeepFacingTarget;
+		if (!bKeepTarget)
+		{
+			Owner->SetActorRotation(FRotator(0.f, DodgeDir.Rotation().Yaw, 0.f));
+		}
+	}
+
 	SetCurrentAction(EPlayerActionType::Dodge);
 
 	if (DodgeMontage)
 	{
-		if (USkeletalMeshComponent* Mesh = Owner ? Owner->FindComponentByClass<USkeletalMeshComponent>() : nullptr)
+		if (UAnimInstance* Anim = GetAnimInstance())
 		{
-			if (UAnimInstance* Anim = Mesh->GetAnimInstance())
-			{
-				// 回避モーションを DodgeDuration に収まるよう再生レートを合わせる
-				// （仮アセットが長いと回避終了後もアニメが残って見えるため）。
-				const float MontageLen = DodgeMontage->GetPlayLength();
-				const float Rate = (DodgeDuration > 0.05f && MontageLen > 0.05f)
-					? FMath::Clamp(MontageLen / DodgeDuration, 0.2f, 4.f)
-					: 1.f;
-				Anim->Montage_Play(DodgeMontage, Rate);
-			}
+			// 回避モーションを DodgeDuration に収まるよう再生レートを合わせる。
+			const float MontageLen = DodgeMontage->GetPlayLength();
+			const float Rate = (DodgeDuration > 0.05f && MontageLen > 0.05f)
+				? FMath::Clamp(MontageLen / DodgeDuration, 0.2f, 4.f)
+				: 1.f;
+			Anim->Montage_Play(DodgeMontage, Rate);
 		}
 	}
 
+	UCombatFeedbackLibrary::PlayCombatFeedback(this, DodgeFeedback, Owner, nullptr,
+		Owner ? Owner->GetActorLocation() : FVector::ZeroVector);
 	OnDodgeStarted.Broadcast();
 	PrintAction(TEXT("回避（ローリング）"), FColor::Green);
 }
@@ -533,14 +750,11 @@ void UPlayerActionComponent::TickDodge(float Dt)
 		// 回避終了時にモーションも明示的に止める（残り再生を持ち越さない）。
 		if (DodgeMontage)
 		{
-			if (USkeletalMeshComponent* Mesh = GetOwner() ? GetOwner()->FindComponentByClass<USkeletalMeshComponent>() : nullptr)
+			if (UAnimInstance* Anim = GetAnimInstance())
 			{
-				if (UAnimInstance* Anim = Mesh->GetAnimInstance())
+				if (Anim->Montage_IsPlaying(DodgeMontage))
 				{
-					if (Anim->Montage_IsPlaying(DodgeMontage))
-					{
-						Anim->Montage_Stop(0.15f, DodgeMontage);
-					}
+					Anim->Montage_Stop(0.15f, DodgeMontage);
 				}
 			}
 		}
@@ -549,32 +763,108 @@ void UPlayerActionComponent::TickDodge(float Dt)
 }
 
 // --------------------------------------------------------------------------
+// 回復（PG-05 / PG-22）
+// --------------------------------------------------------------------------
 
 void UPlayerActionComponent::TryHeal()
 {
-	if (!CanStartAction(EPlayerActionType::Attack)) // 攻撃と同格の割り込み条件
+	if (CurrentAction == EPlayerActionType::Heal || !CanStartAction(EPlayerActionType::Heal))
 	{
 		return;
 	}
-	if (Combat && HealGaugeCost > 0 && !Combat->TryConsumeGauge(HealGaugeCost))
+	if (Combat && Combat->Hp >= Combat->MaxHp)
+	{
+		return; // 満タンでは使わない
+	}
+
+	const bool bUsePotion = HealCostMode != EHealCostMode::Gauge;
+	const bool bUseGauge = HealCostMode != EHealCostMode::Potion;
+	if (bUsePotion && PotionCount <= 0)
+	{
+		PrintAction(TEXT("回復薬がない"), FColor(255, 140, 0));
+		return;
+	}
+	if (bUseGauge && HealGaugeCost > 0 && Combat && Combat->Gauge < HealGaugeCost)
 	{
 		return;
 	}
-	if (Combat)
+	if (bUseGauge && Combat)
 	{
-		Combat->Heal(HealAmount);
+		Combat->TryConsumeGauge(HealGaugeCost);
 	}
+	if (bUsePotion)
+	{
+		AddPotion(-1);
+	}
+
+	HealElapsed = 0.f;
+	bHealApplied = false;
+	HealTotal = HealDuration;
 	if (HealMontage)
 	{
-		if (USkeletalMeshComponent* Mesh = GetOwner() ? GetOwner()->FindComponentByClass<USkeletalMeshComponent>() : nullptr)
+		if (UAnimInstance* Anim = GetAnimInstance())
 		{
-			if (UAnimInstance* Anim = Mesh->GetAnimInstance())
+			const float Len = Anim->Montage_Play(HealMontage);
+			if (HealTotal <= 0.f)
 			{
-				Anim->Montage_Play(HealMontage);
+				HealTotal = Len;
 			}
 		}
 	}
-	PrintAction(TEXT("回復"), FColor::Green);
+
+	SetCurrentAction(EPlayerActionType::Heal);
+	if (!bAllowMoveWhileHealing)
+	{
+		SetMoveInputIgnored(true);
+	}
+
+	AActor* Owner = GetOwner();
+	UCombatFeedbackLibrary::PlayCombatFeedback(this, HealFeedback, Owner, nullptr,
+		Owner ? Owner->GetActorLocation() : FVector::ZeroVector);
+	PrintAction(FString::Printf(TEXT("回復開始（回復薬 残り %d）"), PotionCount), FColor::Green);
+
+	if (HealTotal <= 0.f)
+	{
+		TickHeal(0.f); // 尺 0 なら即時完了
+	}
+}
+
+void UPlayerActionComponent::TickHeal(float Dt)
+{
+	HealElapsed += Dt;
+	if (!bHealApplied && HealElapsed >= FMath::Min(HealApplyTime, HealTotal))
+	{
+		bHealApplied = true;
+		if (Combat)
+		{
+			Combat->Heal(HealAmount);
+		}
+	}
+	if (HealElapsed >= HealTotal)
+	{
+		EndHeal(/*bInterrupted*/ false);
+	}
+}
+
+void UPlayerActionComponent::EndHeal(bool bInterrupted)
+{
+	if (CurrentAction != EPlayerActionType::Heal)
+	{
+		return;
+	}
+	SetMoveInputIgnored(false);
+	if (bInterrupted && HealMontage)
+	{
+		if (UAnimInstance* Anim = GetAnimInstance())
+		{
+			if (Anim->Montage_IsPlaying(HealMontage))
+			{
+				Anim->Montage_Stop(0.1f, HealMontage);
+			}
+		}
+	}
+	SetCurrentAction(EPlayerActionType::None);
+	PrintAction(bInterrupted ? TEXT("回復中断") : TEXT("回復完了"), FColor::Green);
 }
 
 // --------------------------------------------------------------------------
@@ -645,10 +935,17 @@ void UPlayerActionComponent::OnMeleeOverlap(UPrimitiveComponent* /*OverlappedCom
 		EnemyCombat->AddStun(CurrentAttackRow.StunValue);
 	}
 
-	if (CurrentAttackRow.bHitStop)
+	// PG-19: 命中時のみ。多重発生はサブシステム側で延長のみ。
+	if (CurrentAttackRow.HitStop.IsActive())
 	{
-		ApplyHitStop(HitStopDuration);
+		UCombatFeedbackLibrary::ApplyHitStop(GetOwner(), CurrentAttackRow.HitStop);
+		if (bHitStopAlsoOnTarget)
+		{
+			UCombatFeedbackLibrary::ApplyHitStop(OtherActor, CurrentAttackRow.HitStop);
+		}
 	}
+	UCombatFeedbackLibrary::PlayCombatFeedback(this, CurrentAttackRow.HitFeedback, GetOwner(), nullptr,
+		MeleeHitbox ? MeleeHitbox->GetComponentLocation() : OtherActor->GetActorLocation());
 	PlayAttackHitShake();
 	PrintAction(FString::Printf(TEXT("命中 %s → %s に %d ダメージ（残HP %d / %d）"),
 		*CurrentAttackId.ToString(), *OtherActor->GetName(),
@@ -673,34 +970,6 @@ void UPlayerActionComponent::PlayAttackHitShake() const
 	}
 }
 
-void UPlayerActionComponent::ApplyHitStop(float Duration)
-{
-	AActor* Owner = GetOwner();
-	if (!Owner || Duration <= 0.f)
-	{
-		return;
-	}
-	Owner->CustomTimeDilation = 0.02f;
-	if (USkeletalMeshComponent* Mesh = Owner->FindComponentByClass<USkeletalMeshComponent>())
-	{
-		Mesh->GlobalAnimRateScale = 0.02f;
-	}
-	TWeakObjectPtr<AActor> WeakOwner(Owner);
-	FTimerDelegate Del;
-	Del.BindLambda([WeakOwner]()
-	{
-		if (WeakOwner.IsValid())
-		{
-			WeakOwner->CustomTimeDilation = 1.f;
-			if (USkeletalMeshComponent* M = WeakOwner->FindComponentByClass<USkeletalMeshComponent>())
-			{
-				M->GlobalAnimRateScale = 1.f;
-			}
-		}
-	});
-	Owner->GetWorldTimerManager().SetTimer(HitStopTimerHandle, Del, Duration, false);
-}
-
 // --------------------------------------------------------------------------
 
 void UPlayerActionComponent::HandleCombatStateChanged(EPlayerCombatState /*OldState*/, EPlayerCombatState NewState)
@@ -712,12 +981,28 @@ void UPlayerActionComponent::HandleCombatStateChanged(EPlayerCombatState /*OldSt
 		{
 			CancelAttack();
 		}
+		EndHeal(/*bInterrupted*/ true); // PG-05: 被弾で回復中断
 	}
-	else if (NewState == EPlayerCombatState::Stun)
+	else if (NewState == EPlayerCombatState::Stun || NewState == EPlayerCombatState::Dead)
 	{
+		// PG-04 / PG-05: 気絶・死亡で攻撃・回復・回避・ガードをすべて止める。
 		if (CurrentAction == EPlayerActionType::Attack)
 		{
 			CancelAttack();
+		}
+		EndHeal(true);
+		EndCurrentAttackStep(true);
+		if (NewState == EPlayerCombatState::Dead)
+		{
+			bComboQueued = false;
+			LastMoveInput = FVector2D::ZeroVector;
+			if (DodgeMontage)
+			{
+				if (UAnimInstance* Anim = GetAnimInstance())
+				{
+					Anim->Montage_Stop(0.f, DodgeMontage);
+				}
+			}
 		}
 		if (CurrentAction == EPlayerActionType::Dodge && Combat)
 		{
@@ -760,6 +1045,11 @@ void UPlayerActionComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	if (Combat && Combat->IsDead())
+	{
+		return; // PG-04: 死亡後は入力・行動・判定すべて停止
+	}
+
 	PollFallbackInput();
 
 	if (ComboCooldownTimer > 0.f)
@@ -771,6 +1061,7 @@ void UPlayerActionComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	{
 	case EPlayerActionType::Attack: TickAttack(DeltaTime); break;
 	case EPlayerActionType::Dodge:  TickDodge(DeltaTime); break;
+	case EPlayerActionType::Heal:   TickHeal(DeltaTime); break;
 	default: break;
 	}
 

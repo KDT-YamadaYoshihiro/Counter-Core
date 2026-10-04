@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/HUD.h"
+#include "Engine/DataTable.h"
+#include "Layout/Margin.h"
 #include "CounterCoreHUD.generated.h"
 
 class UPlayerCombatComponent;
@@ -32,6 +34,46 @@ struct FGaugeImageConfig
 	/** 描画サイズ（ピクセル）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FVector2D Size = FVector2D(200.f, 60.f);
+
+	/** PG-27: Texture を 9-slice で描くときの端の幅（テクスチャに対する割合 0-0.5）。全て 0 なら通常の引き伸ばし。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FMargin NineSliceMargin = FMargin(0.f);
+
+	/** PG-27: ゲージの上に重ねる枠画像（Size と同じ矩形、FrameNineSliceMargin で 9-slice）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TObjectPtr<UTexture2D> FrameTexture = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FMargin FrameNineSliceMargin = FMargin(0.f);
+
+	/** PG-27: 装飾画像（ゲージ左上基準の DecorationOffset / DecorationSize）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TObjectPtr<UTexture2D> DecorationTexture = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FVector2D DecorationOffset = FVector2D::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FVector2D DecorationSize = FVector2D(64.f, 64.f);
+};
+
+/** PG-23: 操作説明の 1 行（DT_ControlGuide）。 */
+USTRUCT(BlueprintType)
+struct FControlGuideRow : public FTableRowBase
+{
+	GENERATED_BODY()
+
+	/** ボタン名（例: 「RT / 右クリック」）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ControlGuide")
+	FText ButtonName;
+
+	/** 操作名（例: 「ガード」）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ControlGuide")
+	FText ActionName;
+
+	/** ボタンアイコン（任意）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "ControlGuide")
+	TObjectPtr<UTexture2D> ButtonIcon = nullptr;
 };
 
 /**
@@ -97,12 +139,63 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Gauge Images")
 	FGaugeImageConfig HealPotionImage = FGaugeImageConfig{ nullptr, FVector2D(1.f, 1.f), FVector2D(-120.f, -120.f), FVector2D(80.f, 80.f) };
 
+	// --- 回復薬残数（PG-22）---
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Potion") bool bShowPotionCount = true;
+
+	/** 表示形式。{Count} / {Max} が置換される。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Potion")
+	FText PotionCountFormat = FText::FromString(TEXT("x {Count}"));
+
+	/** HealPotionImage の基準位置からのオフセット。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Potion")
+	FVector2D PotionCountOffset = FVector2D(56.f, 52.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Potion", meta = (ClampMin = "0.1"))
+	float PotionCountScale = 1.4f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Potion")
+	FLinearColor PotionCountColor = FLinearColor::White;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|Potion")
+	FLinearColor PotionEmptyColor = FLinearColor(0.6f, 0.6f, 0.6f, 1.f);
+
+	// --- 操作説明（PG-23）---
+
+	/** 操作表（行構造 FControlGuideRow）。未設定なら表は出さない。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|ControlGuide")
+	TObjectPtr<UDataTable> ControlGuideTable;
+
+	/** コントローラー画像。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|ControlGuide")
+	FGaugeImageConfig ControllerImage = FGaugeImageConfig{ nullptr, FVector2D(0.5f, 0.5f), FVector2D(40.f, -180.f), FVector2D(480.f, 320.f) };
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|ControlGuide")
+	FText ControlGuideTitle = FText::FromString(TEXT("操作説明"));
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|ControlGuide")
+	FText ControlGuideBackHint = FText::FromString(TEXT("戻る: Esc / B"));
+
+	/** 表の左上（画面比 0-1）・行間隔（画面高さ比）・操作名列の X オフセット（px）・文字スケール。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|ControlGuide")
+	FVector2D ControlGuideTableOrigin = FVector2D(0.12f, 0.25f);
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|ControlGuide")
+	float ControlGuideRowSpacing = 0.07f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|ControlGuide")
+	float ControlGuideActionColumnX = 260.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|ControlGuide")
+	float ControlGuideTextScale = 1.2f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HUD|ControlGuide")
+	FVector2D ControlGuideIconSize = FVector2D(32.f, 32.f);
+
 private:
 	AActor* FindEnemy() const;
 	void DrawBar(float X, float Y, float W, float H, float FillFrac, float DelayFrac,
 		const FLinearColor& FillColor, const FLinearColor& DelayColor);
 	void DrawLabel(const FString& Text, float X, float Y, const FLinearColor& Color, float Scale = 1.f);
 	void DrawGaugeImage(const FGaugeImageConfig& Cfg, float VW, float VH);
+	void DrawNineSlice(UTexture2D* Tex, float X, float Y, float W, float H, const FMargin& Margin);
+	void DrawControlGuide(float VW, float VH);
 	void DrawInGameMenu(class UBattleDirectorComponent* BD, float VW, float VH);
 
 	void SweepLegacyWidgets();

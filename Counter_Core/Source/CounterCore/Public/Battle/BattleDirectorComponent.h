@@ -133,6 +133,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Battle|Menu", meta = (ClampMin = "0.001", ClampMax = "1"))
 	float MenuTimeDilation = 0.01f;
 
+	/** PG-18: UI の SE（未設定なら鳴らさない）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Battle|Menu|Sound")
+	TObjectPtr<class USoundBase> MenuOpenSound;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Battle|Menu|Sound")
+	TObjectPtr<class USoundBase> MenuMoveSound;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Battle|Menu|Sound")
+	TObjectPtr<class USoundBase> MenuConfirmSound;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Battle|Menu|Sound")
+	TObjectPtr<class USoundBase> MenuCancelSound;
+
 	UPROPERTY(BlueprintAssignable, Category = "Battle|Menu")
 	FBattleSimpleEvent OnMenuOpened;
 	UPROPERTY(BlueprintAssignable, Category = "Battle|Menu")

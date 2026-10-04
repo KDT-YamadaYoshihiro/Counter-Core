@@ -1,0 +1,34 @@
+{
+    "Version": "1.2",
+    "Data": {
+        "Source": "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\blueprint\\uecliblueprintasset.cpp",
+        "ProvidedModule": "",
+        "PCH": "c:\\develop\\projects\\counter-core\\counter_core\\intermediate\\build\\win64\\x64\\countercoreeditor\\development\\unrealed\\sharedpch.unrealed.project.valapi.valexpapi.cpp20.h.pch",
+        "Includes": [
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\intermediate\\build\\win64\\x64\\unrealeditor\\development\\uecliplugin\\definitions.uecliplugin.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\blueprint\\uecliblueprintasset.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\assetregistry\\public\\assetregistry\\assetregistrymodule.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\assetregistry\\public\\assetregistry\\iassetregistry.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\coreuobject\\public\\misc\\assetregistryinterface.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\intermediate\\build\\win64\\unrealeditor\\inc\\assetregistry\\uht\\iassetregistry.generated.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\editor\\unrealed\\classes\\editor\\transactor.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\core\\public\\serialization\\archiveserializedpropertychain.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\engine\\public\\transactioncommon.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\intermediate\\build\\win64\\unrealeditor\\inc\\unrealed\\uht\\transactor.generated.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\editor\\unrealed\\public\\kismet2\\kismeteditorutilities.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\editor\\unrealed\\public\\objecttools.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\developer\\collectionmanager\\public\\collectionmanagertypes.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\developer\\sourcecontrol\\public\\isourcecontrolstate.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\ueclilog.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\coreuobject\\public\\uobject\\savepackage.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\core\\public\\serialization\\packagewriter.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\core\\public\\io\\iodispatcher.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\core\\public\\io\\iobuffer.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\core\\public\\io\\iocontainerid.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\core\\public\\misc\\ienginecrypto.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\coreuobject\\public\\uobject\\objectsaveoverride.h"
+        ],
+        "ImportedModules": [],
+        "ImportedHeaderUnits": []
+    }
+}

@@ -1,0 +1,41 @@
+{
+    "Version": "1.2",
+    "Data": {
+        "Source": "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\handlers\\ueclieditorhandlers.cpp",
+        "ProvidedModule": "",
+        "PCH": "c:\\develop\\projects\\counter-core\\counter_core\\intermediate\\build\\win64\\x64\\countercoreeditor\\development\\unrealed\\sharedpch.unrealed.project.valapi.valexpapi.cpp20.h.pch",
+        "Includes": [
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\intermediate\\build\\win64\\x64\\unrealeditor\\development\\uecliplugin\\definitions.uecliplugin.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\handlers\\ueclieditorhandlers.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\online\\httpserver\\public\\httpresultcallback.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\online\\httpserver\\public\\httpserverresponse.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\online\\httpserver\\public\\httpserverconstants.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\online\\httpserver\\public\\httpserverhttpversion.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\editor\\unrealed\\public\\filehelpers.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\editor\\unrealed\\public\\packagetools.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\intermediate\\build\\win64\\unrealeditor\\inc\\unrealed\\uht\\packagetools.generated.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\developer\\sourcecontrol\\public\\isourcecontrolprovider.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\developer\\sourcecontrol\\public\\isourcecontrolchangelist.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\developer\\sourcecontrol\\public\\isourcecontrolchangeliststate.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\developer\\sourcecontrol\\public\\isourcecontrolstate.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\developer\\sourcecontrol\\public\\isourcecontroloperation.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\developer\\sourcecontrol\\public\\sourcecontrolresultinfo.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\intermediate\\build\\win64\\unrealeditor\\inc\\unrealed\\uht\\filehelpers.generated.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\http\\ueclihttptypes.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\online\\httpserver\\public\\httpserverrequest.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\online\\httpserver\\public\\httppath.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\online\\httpserver\\public\\httprequesthandler.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\projects\\public\\interfaces\\ipluginmanager.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\projects\\public\\plugindescriptor.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\projects\\public\\custombuildsteps.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\projects\\public\\localizationdescriptor.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\projects\\public\\moduledescriptor.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\projects\\public\\plugindisalloweddescriptor.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\projects\\public\\pluginreferencedescriptor.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\projects\\public\\versescope.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\public\\uecliprotocol.h"
+        ],
+        "ImportedModules": [],
+        "ImportedHeaderUnits": []
+    }
+}

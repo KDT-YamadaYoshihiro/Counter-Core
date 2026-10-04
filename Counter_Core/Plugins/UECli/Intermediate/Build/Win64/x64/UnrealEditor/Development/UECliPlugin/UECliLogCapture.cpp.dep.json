@@ -1,0 +1,14 @@
+{
+    "Version": "1.2",
+    "Data": {
+        "Source": "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\runtime\\ueclilogcapture.cpp",
+        "ProvidedModule": "",
+        "PCH": "c:\\develop\\projects\\counter-core\\counter_core\\intermediate\\build\\win64\\x64\\countercoreeditor\\development\\unrealed\\sharedpch.unrealed.project.valapi.valexpapi.cpp20.h.pch",
+        "Includes": [
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\intermediate\\build\\win64\\x64\\unrealeditor\\development\\uecliplugin\\definitions.uecliplugin.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\runtime\\ueclilogcapture.h"
+        ],
+        "ImportedModules": [],
+        "ImportedHeaderUnits": []
+    }
+}
