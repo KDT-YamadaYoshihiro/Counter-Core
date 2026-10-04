@@ -43,6 +43,16 @@ void FMonsterAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float D
 		return;
 	}
 
+	// Idle / Run は Initialize 後（AMonsterCharacterBase::BeginPlay）に渡されるため、差し替えをここで反映する。
+	if (IdlePlayer.GetSequence() != Owner->IdleAnim)
+	{
+		IdlePlayer.SetSequence(Owner->IdleAnim);
+	}
+	if (RunPlayer.GetSequence() != Owner->RunAnim)
+	{
+		RunPlayer.SetSequence(Owner->RunAnim);
+	}
+
 	const float Threshold = FMath::Max(1.f, Owner->RunSpeedThreshold);
 	const float TargetAlpha = FMath::Clamp(Owner->GroundSpeed / Threshold, 0.f, 1.f);
 	BlendAlpha = (DeltaSeconds > 0.f && Owner->BlendInterpSpeed > 0.f)

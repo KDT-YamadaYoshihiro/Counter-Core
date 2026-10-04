@@ -1154,7 +1154,7 @@ void AMonsterCharacterBase::Tick(float Dt)
 		{
 			const TObjectPtr<UAnimMontage>* DeathM = ReactionMontages.Find(EMonsterState::Dead);
 			UAnimInstance* Anim = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
-			if (DeathM && *DeathM && Anim && Anim->Montage_GetPosition(*DeathM) >= (*DeathM)->GetPlayLength() - 0.1f)
+			if (DeathM && *DeathM && Anim && Anim->Montage_GetPosition(*DeathM) >= (*DeathM)->GetPlayLength() - (*DeathM)->BlendOut.GetBlendTime() - 0.05f)
 			{
 				StartDeathRagdoll();
 			}
