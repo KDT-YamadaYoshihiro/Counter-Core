@@ -1,23 +1,22 @@
-# 引き継ぎ (2026-10-05 08:11 / feature/after/prog1)
+# 引き継ぎ (2026-10-05 15:35 / feature/after/prog1)
 
-次の一手: エディタで `LV_Ingame` を開いて Play（Alt+P）し、敵の待機/走りモーション（Tポーズ修正）と、死亡モーション後に倒れたまま止まるかを目視確認する。
+次の一手: デザイナーからガード中ループ素材が届いたら、BP_Player > PlayerGuard の `GuardLoopAnim` に入れて PIE で右クリック長押しを確認する
 
 ## 完了
-- ブラッシュアップ仕様（`Docs/BrushUp_PG_Tasks.md`）のプログラマー担当分の実装（コミット `fc2cf94`）
-- 素材・数値を DT / BP で差し替え可能に。手順書: `Docs/Asset_Param_Swap_Guide.md`
-- 仮仕様は確定: 回復コスト=回復薬のみ（`HealCostMode`）、判定タイミング=DT秒数（`bUseNotifyHitWindow`=false）
-- 敵のTポーズ修正: `MonsterAnimInstance.cpp` の `PreUpdate` で待機/走りアニメを毎フレーム再生ノードへ反映
-- 敵の死亡: ラグドール無効（BP_Enemy と LV_Ingame/LV_Title 配置の `bRagdollOnDeath`=False）、Dead に `AM_MonsterStanStart` を仮設定、終端のブレンド前でポーズ固定（`MonsterCharacterBase.cpp:1157`）。PIE で一時停止・物理オフを確認済み
-
-## 残り（優先順）
-- ユーザーによる PIE での目視確認（Tポーズ／死亡ポーズ）
-- 「アニメーションの遷移と再生の違和感」の症状をユーザーから聞いて原因を絞る（候補: 待機⇔走りのブレンド、Montage のブレンド時間、振り向きモーション無し、判定とモーションのずれ）
-- 問題なければ `feature/after/prog1` の PR 作成（ユーザーが実施予定）
-
+- ガード演出の差し替え口を追加（GuardStartMontage / GuardLoopAnim / GuardEndMontage / GuardAnimSlot / GuardAnimBlendTime）`PlayerGuardComponent.h` — `98fbefc`
+- BP_Player に仮アニメ設定（Loop=`guard`、End=`AM_GuardClear`）— `3fb3360`
+- 構えモーションを 1 回再生→最後のポーズで保持（2 秒ごとの構え直しを解消）`PlayerGuardComponent.cpp:169-184` — `b08933d`（PIE で 1.86s 停止を確認）
+- PR #12（feature/after/prog1 → main）に push 済み。**マージしない**指示
+## 残り（優先順・最大5件）
+- PR #12 の中身整理: 個人用ファイル（`.claude/`, `.mcp.json`, `Plugins/`, `claude-1-ultra-opus-adhd.cmd`）混入、`仕様書.xlsx` / `start-claude-1.cmd` 削除の扱いをユーザーに確認
+- アニメ遷移の違和感がどの場面か聞き取り（未回答）
 ## 保留
-- 本物の死亡モーション — デザイナーの素材待ち（BP_Enemy `ReactionMontages` → Dead を差し替えるだけ）
-- T1-1〜T1-3、T3-4、T3-8 — アセット待ち
-
+- ガード中ループ素材 — デザイナー待ち（プレイヤー用は `guard` / `guardclear` のみ）
+- T1-1〜T1-3、T3-4、T3-8、死亡モーション — 素材待ち
+- UE CLI Live Coding ハング — 修正依頼中（報告書 `Docs/Bug_UECli_LiveCoding_Hang.md` を作成したが現在 Docs/ に見当たらない。ユーザーが移動した可能性）
 ## 再開に必要なもの
-- UE 5.7 と Visual Studio 2022。ビルド: `"$LOCALAPPDATA/uecli/uecli.exe" code build --project Counter_Core`
-- エディタが UE CLI に応答しなくなることがある（Live Coding 中など）。その場合はエディタを終了してフルビルド
+- UE 5.7.4、uecli（`$LOCALAPPDATA/uecli/uecli.exe`）
+- エディタが固まったら: 許可を得て強制終了 → `uecli code build --project Counter_Core` → 起動
+## メモ
+- Live Coding（ue_apply_code）でエディタがハングしやすい。.cpp 変更でもエディタ停止→フルビルドが安全
+- PIE で自動ガード検証時は PlayerActionComponent の Tick を止める（右クリックを毎フレーム読むため）
