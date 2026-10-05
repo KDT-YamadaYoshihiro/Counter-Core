@@ -1092,8 +1092,24 @@ void AMonsterCharacterBase::StartDeathRagdoll()
 	}
 	else
 	{
-		// ラグドールしない場合は死亡ポーズで固定。
-		M->bPauseAnims = true;
+		// ラグドールしない場合は死亡 Montage を末尾で一時停止し、死亡ポーズのまま保持する（待機へ戻さない）。
+		const TObjectPtr<UAnimMontage>* DeathM = ReactionMontages.Find(EMonsterState::Dead);
+		UAnimInstance* Anim = M->GetAnimInstance();
+		if (DeathM && *DeathM && Anim)
+		{
+			UAnimMontage* DM = *DeathM;
+			if (!Anim->Montage_IsActive(DM))
+			{
+				// 既に終了 / ブレンドアウト済みなら末尾付近から再生し直して止める。
+				Anim->Montage_Play(DM, 1.f, EMontagePlayReturnType::MontageLength, 0.f, true);
+				Anim->Montage_SetPosition(DM, FMath::Max(0.f, DM->GetPlayLength() - DM->BlendOut.GetBlendTime() - 0.05f));
+			}
+			Anim->Montage_Pause(DM);
+		}
+		else
+		{
+			M->bPauseAnims = true;
+		}
 	}
 }
 
