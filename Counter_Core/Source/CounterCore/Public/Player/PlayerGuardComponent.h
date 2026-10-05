@@ -7,6 +7,8 @@
 
 class UPlayerCombatComponent;
 class UAnimMontage;
+class UAnimSequenceBase;
+class UAnimInstance;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPlayerGuardStateChanged, bool, bGuarding);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FPlayerShieldChanged, float, Durability, float, MaxDurability);
@@ -63,6 +65,26 @@ public:
 	/** ガード成功時に 1 回再生する Montage（PG-06）。未設定なら再生しない。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Guard")
 	TObjectPtr<UAnimMontage> GuardSuccessMontage;
+
+	/** ガード開始時に 1 回再生する Montage。未設定なら即ループへ。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Guard|Anim")
+	TObjectPtr<UAnimMontage> GuardStartMontage;
+
+	/** ガード中にループ再生するアニメ（AnimSequence 可）。開始 Montage / 成功 Montage の再生後に自動で再開。未設定なら再生しない。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Guard|Anim")
+	TObjectPtr<UAnimSequenceBase> GuardLoopAnim;
+
+	/** ガード解除時に 1 回再生する Montage。未設定なら再生しない。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Guard|Anim")
+	TObjectPtr<UAnimMontage> GuardEndMontage;
+
+	/** GuardLoopAnim を流す AnimBP のスロット名（AnimGraph に Slot ノードが必要）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Guard|Anim")
+	FName GuardAnimSlot = TEXT("DefaultSlot");
+
+	/** ガードアニメのブレンド時間（秒）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Guard|Anim", meta = (ClampMin = "0"))
+	float GuardAnimBlendTime = 0.1f;
 
 	/** ガード可能角度（正面 0 度からの片側、deg）。180 = 全方位。範囲外は通常被弾（PG-06）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Guard", meta = (ClampMin = "0", ClampMax = "180"))
@@ -167,6 +189,11 @@ private:
 	void ForceReleaseWithCooldown();
 	UPlayerCombatComponent* GetCombat() const;
 	void ApplyGuardHitStop();
+	UAnimInstance* GetOwnerAnimInstance() const;
+	void UpdateGuardLoopAnim();
+
+	UPROPERTY()
+	TObjectPtr<UAnimMontage> ActiveGuardLoopMontage;
 
 	UPROPERTY()
 	TWeakObjectPtr<UPlayerCombatComponent> CachedCombat;

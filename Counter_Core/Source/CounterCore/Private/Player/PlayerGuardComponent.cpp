@@ -112,7 +112,70 @@ void UPlayerGuardComponent::SetGuarding(bool bNewGuarding)
 		}
 	}
 
+	if (UAnimInstance* Anim = GetOwnerAnimInstance())
+	{
+		if (bGuarding)
+		{
+			if (GuardStartMontage)
+			{
+				Anim->Montage_Play(GuardStartMontage);
+			}
+			UpdateGuardLoopAnim();
+		}
+		else
+		{
+			if (ActiveGuardLoopMontage)
+			{
+				Anim->Montage_Stop(GuardAnimBlendTime, ActiveGuardLoopMontage);
+				ActiveGuardLoopMontage = nullptr;
+			}
+			if (GuardStartMontage && Anim->Montage_IsPlaying(GuardStartMontage))
+			{
+				Anim->Montage_Stop(GuardAnimBlendTime, GuardStartMontage);
+			}
+			if (GuardEndMontage)
+			{
+				Anim->Montage_Play(GuardEndMontage);
+			}
+		}
+	}
+
 	OnGuardStateChanged.Broadcast(bGuarding);
+}
+
+UAnimInstance* UPlayerGuardComponent::GetOwnerAnimInstance() const
+{
+	if (const AActor* Owner = GetOwner())
+	{
+		if (const USkeletalMeshComponent* Mesh = Owner->FindComponentByClass<USkeletalMeshComponent>())
+		{
+			return Mesh->GetAnimInstance();
+		}
+	}
+	return nullptr;
+}
+
+void UPlayerGuardComponent::UpdateGuardLoopAnim()
+{
+	if (!bGuarding || !GuardLoopAnim)
+	{
+		return;
+	}
+	UAnimInstance* Anim = GetOwnerAnimInstance();
+	if (!Anim)
+	{
+		return;
+	}
+	if (ActiveGuardLoopMontage && Anim->Montage_IsPlaying(ActiveGuardLoopMontage))
+	{
+		return;
+	}
+	// 開始 / 成功 Montage など他の Montage 再生中は待つ（終わったらループを再開）。
+	if (Anim->IsAnyMontagePlaying())
+	{
+		return;
+	}
+	ActiveGuardLoopMontage = Anim->PlaySlotAnimationAsDynamicMontage(GuardLoopAnim, GuardAnimSlot, GuardAnimBlendTime, GuardAnimBlendTime, 1.f, 100000);
 }
 
 void UPlayerGuardComponent::ForceReleaseWithCooldown()
@@ -133,6 +196,7 @@ void UPlayerGuardComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 	if (bGuarding)
 	{
 		TimeSinceGuardStart += DeltaTime;
+		UpdateGuardLoopAnim();
 		// ガード可能時間を消費。使い切ったら強制解除＋クールタイム。
 		GuardTimeRemaining = FMath::Max(0.f, GuardTimeRemaining - DeltaTime);
 		OnGuardTimeChanged.Broadcast(GuardTimeRemaining, MaxGuardTime);
