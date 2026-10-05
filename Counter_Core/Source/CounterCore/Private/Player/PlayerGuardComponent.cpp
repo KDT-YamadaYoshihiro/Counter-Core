@@ -166,8 +166,14 @@ void UPlayerGuardComponent::UpdateGuardLoopAnim()
 	{
 		return;
 	}
-	if (ActiveGuardLoopMontage && Anim->Montage_IsPlaying(ActiveGuardLoopMontage))
+	if (ActiveGuardLoopMontage && Anim->Montage_IsActive(ActiveGuardLoopMontage))
 	{
+		// 構えモーションは 1 回だけ再生し、最後のポーズで止めて構えを維持する。
+		if (Anim->Montage_IsPlaying(ActiveGuardLoopMontage)
+			&& Anim->Montage_GetPosition(ActiveGuardLoopMontage) >= ActiveGuardLoopMontage->GetPlayLength() - GuardAnimBlendTime - 0.05f)
+		{
+			Anim->Montage_Pause(ActiveGuardLoopMontage);
+		}
 		return;
 	}
 	// 開始 / 成功 Montage など他の Montage 再生中は待つ（終わったらループを再開）。
@@ -175,7 +181,7 @@ void UPlayerGuardComponent::UpdateGuardLoopAnim()
 	{
 		return;
 	}
-	ActiveGuardLoopMontage = Anim->PlaySlotAnimationAsDynamicMontage(GuardLoopAnim, GuardAnimSlot, GuardAnimBlendTime, GuardAnimBlendTime, 1.f, 100000);
+	ActiveGuardLoopMontage = Anim->PlaySlotAnimationAsDynamicMontage(GuardLoopAnim, GuardAnimSlot, GuardAnimBlendTime, GuardAnimBlendTime, 1.f, 1);
 }
 
 void UPlayerGuardComponent::ForceReleaseWithCooldown()
