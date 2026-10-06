@@ -1,0 +1,41 @@
+{
+    "Version": "1.2",
+    "Data": {
+        "Source": "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\http\\ueclihttpserver.cpp",
+        "ProvidedModule": "",
+        "PCH": "c:\\develop\\projects\\counter-core\\counter_core\\intermediate\\build\\win64\\x64\\countercoreeditor\\development\\unrealed\\sharedpch.unrealed.project.valapi.valexpapi.cpp20.h.pch",
+        "Includes": [
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\intermediate\\build\\win64\\x64\\unrealeditor\\development\\uecliplugin\\definitions.uecliplugin.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\http\\ueclihttpserver.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\online\\httpserver\\public\\httprequesthandler.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\online\\httpserver\\public\\httpresultcallback.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\online\\httpserver\\public\\httpserverresponse.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\online\\httpserver\\public\\httpserverconstants.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\online\\httpserver\\public\\httpserverhttpversion.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\online\\httpserver\\public\\httproutehandle.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\online\\httpserver\\public\\httpserverrequest.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\online\\httpserver\\public\\httppath.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\uecliservices.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\online\\httpserver\\public\\httpservermodule.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\online\\httpserver\\public\\ihttprouter.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\handlers\\uecliblueprinthandlers.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\handlers\\ueclicodehandlers.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\handlers\\ueclieditorhandlers.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\handlers\\ueclijobhandlers.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\handlers\\ueclilandscapehandlers.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\handlers\\uecliniagarahandlers.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\handlers\\ueclilevelhandlers.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\handlers\\ueclimaterialhandlers.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\handlers\\uecliobjecthandlers.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\handlers\\uecliprojecthandlers.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\handlers\\uecliruntimehandlers.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\handlers\\uecliwidgethandlers.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\http\\ueclihttptypes.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\jobs\\ueclijobmanager.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\ueclilog.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\public\\uecliprotocol.h"
+        ],
+        "ImportedModules": [],
+        "ImportedHeaderUnits": []
+    }
+}

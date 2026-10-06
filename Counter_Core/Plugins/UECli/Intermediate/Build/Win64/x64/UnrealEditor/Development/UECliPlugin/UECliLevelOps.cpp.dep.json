@@ -1,0 +1,17 @@
+{
+    "Version": "1.2",
+    "Data": {
+        "Source": "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\level\\ueclilevelops.cpp",
+        "ProvidedModule": "",
+        "PCH": "c:\\develop\\projects\\counter-core\\counter_core\\intermediate\\build\\win64\\x64\\countercoreeditor\\development\\unrealed\\sharedpch.unrealed.project.valapi.valexpapi.cpp20.h.pch",
+        "Includes": [
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\intermediate\\build\\win64\\x64\\unrealeditor\\development\\uecliplugin\\definitions.uecliplugin.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\level\\ueclilevelops.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\editor\\unrealed\\public\\subsystems\\editoractorsubsystem.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\intermediate\\build\\win64\\unrealeditor\\inc\\unrealed\\uht\\editoractorsubsystem.generated.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\ueclilog.h"
+        ],
+        "ImportedModules": [],
+        "ImportedHeaderUnits": []
+    }
+}

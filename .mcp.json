@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "ue-cli": {
+      "command": "C:\\Users\\kirit\\AppData\\Local\\uecli\\uecli-mcp.exe",
+      "args": [],
+      "env": {}
+    }
+  }
+}
