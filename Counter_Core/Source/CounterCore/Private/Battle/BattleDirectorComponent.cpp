@@ -86,6 +86,14 @@ void UBattleDirectorComponent::ResolveRefs()
 	{
 		EnemyCombat->OnDied.AddDynamic(this, &UBattleDirectorComponent::HandleEnemyDied);
 	}
+	if (PlayerCombat && !PlayerCombat->OnDeathAnimFinished.IsAlreadyBound(this, &UBattleDirectorComponent::HandleDeathAnimFinished))
+	{
+		PlayerCombat->OnDeathAnimFinished.AddDynamic(this, &UBattleDirectorComponent::HandleDeathAnimFinished);
+	}
+	if (EnemyCombat && !EnemyCombat->OnDeathAnimFinished.IsAlreadyBound(this, &UBattleDirectorComponent::HandleDeathAnimFinished))
+	{
+		EnemyCombat->OnDeathAnimFinished.AddDynamic(this, &UBattleDirectorComponent::HandleDeathAnimFinished);
+	}
 	if (PlayerGuard && !PlayerGuard->OnGuardSuccess.IsAlreadyBound(this, &UBattleDirectorComponent::HandleGuardSuccess))
 	{
 		PlayerGuard->OnGuardSuccess.AddDynamic(this, &UBattleDirectorComponent::HandleGuardSuccess);
@@ -349,15 +357,44 @@ void UBattleDirectorComponent::HandleGuardSuccess()
 
 void UBattleDirectorComponent::HandlePlayerDied()
 {
-	EndBattle(EBattleResult::PlayerLose);
+	EndBattle(EBattleResult::PlayerLose, /*bWaitForDeathAnim*/ true);
 }
 
 void UBattleDirectorComponent::HandleEnemyDied()
 {
-	EndBattle(EBattleResult::PlayerWin);
+	EndBattle(EBattleResult::PlayerWin, /*bWaitForDeathAnim*/ true);
 }
 
-void UBattleDirectorComponent::EndBattle(EBattleResult NewResult)
+void UBattleDirectorComponent::HandleDeathAnimFinished()
+{
+	// 死亡モーション完了 → ゲームオーバー / ゲームクリア処理（リザルト）へ。
+	if (!bWaitingDeathAnim)
+	{
+		return;
+	}
+	bWaitingDeathAnim = false;
+	ScheduleShowResult(ResultDelayAfterDeathAnim);
+}
+
+void UBattleDirectorComponent::ScheduleShowResult(float Delay)
+{
+	if (UWorld* World = GetWorld())
+	{
+		TWeakObjectPtr<UBattleDirectorComponent> WeakThis(this);
+		FTimerDelegate Del;
+		Del.BindLambda([WeakThis]()
+		{
+			if (WeakThis.IsValid()) { WeakThis->ShowResult(); }
+		});
+		World->GetTimerManager().SetTimer(ResultTimer, Del, FMath::Max(0.1f, Delay), false);
+	}
+	else
+	{
+		ShowResult();
+	}
+}
+
+void UBattleDirectorComponent::EndBattle(EBattleResult NewResult, bool bWaitForDeathAnim)
 {
 	if (Result != EBattleResult::InProgress)
 	{
@@ -444,21 +481,10 @@ void UBattleDirectorComponent::EndBattle(EBattleResult NewResult)
 		}
 	}
 
-	// 少し待ってからリザルトを表示（終了演出のあいだ）。
-	if (World)
-	{
-		TWeakObjectPtr<UBattleDirectorComponent> WeakThis(this);
-		FTimerDelegate Del;
-		Del.BindLambda([WeakThis]()
-		{
-			if (WeakThis.IsValid()) { WeakThis->ShowResult(); }
-		});
-		World->GetTimerManager().SetTimer(ResultTimer, Del, FMath::Max(0.1f, ResultTransitionDelay), false);
-	}
-	else
-	{
-		ShowResult();
-	}
+	// 死亡による決着は死亡モーション完了（HandleDeathAnimFinished）を待つ。DeathAnimMaxWait は保険。
+	// それ以外（あきらめる）は少し待ってからリザルトを表示（終了演出のあいだ）。
+	bWaitingDeathAnim = bWaitForDeathAnim;
+	ScheduleShowResult(bWaitForDeathAnim ? DeathAnimMaxWait : ResultTransitionDelay);
 }
 
 void UBattleDirectorComponent::ShowResult()

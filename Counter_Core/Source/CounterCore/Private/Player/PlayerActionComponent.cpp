@@ -464,7 +464,7 @@ void UPlayerActionComponent::TickAttack(float Dt)
 	}
 
 	// PG-08: InterruptibleStartFrame 到達後、受付済みの入力があれば即次段。
-	if (bComboQueued && CurrentAttackRow.NextComboId != NAME_None && CurrentAttackRow.InterruptibleStartFrame >= 0 && FrameRate > 0.f)
+	if (bComboQueued && CurrentAttackRow.NextComboId != NAME_None && CurrentAttackRow.InterruptibleStartFrame >= 0.f && FrameRate > 0.f)
 	{
 		const float MontageTime = AttackElapsed * (CurrentAttackRow.Montage ? CurrentPlayRate : 1.f);
 		if (MontageTime >= CurrentAttackRow.InterruptibleStartFrame / FrameRate)
@@ -612,9 +612,9 @@ void UPlayerActionComponent::SyncAttackTableToMontages()
 		const float RawFrame = Len * FrameRate * AutoInterruptibleRatio;
 		switch (InterruptibleFrameRounding)
 		{
-		case EFrameRounding::Ceil:  Row->InterruptibleStartFrame = FMath::CeilToInt(RawFrame); break;
-		case EFrameRounding::Round: Row->InterruptibleStartFrame = FMath::RoundToInt(RawFrame); break;
-		default:                    Row->InterruptibleStartFrame = FMath::FloorToInt(RawFrame); break;
+		case EFrameRounding::Ceil:  Row->InterruptibleStartFrame = FMath::CeilToFloat(RawFrame * 100.f) / 100.f; break;
+		case EFrameRounding::Round: Row->InterruptibleStartFrame = FMath::RoundToFloat(RawFrame * 100.f) / 100.f; break;
+		default:                    Row->InterruptibleStartFrame = FMath::FloorToFloat(RawFrame * 100.f) / 100.f; break;
 		}
 		++Updated;
 	}

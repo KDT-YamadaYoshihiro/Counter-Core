@@ -94,18 +94,19 @@
 
 ### デバッグキー（`bEnableDebugKeys`、既定 true）
 
-プレイ中、プレイヤー0のキーでこの敵のステートを強制発火（`WasInputKeyJustPressed` でポーリング）:
+開発者モード（F1）ON の間だけ、プレイヤー0のキーでこの敵のステートを強制発火（`WasInputKeyJustPressed` でポーリング）。
+Shipping ビルドでは無効。操作全体は `Docs/DevMode_Guide.md` を参照。
 
 | キー | 動作 |
 |---|---|
 | **U** | スタン（スタン値を上限にして `Stun` へ） |
 | **I** | やられ（`Hitstun` へ） |
 | **O** | 死亡（HP0・`OnDied` 発火して `Dead` へ） |
-| **K** | ガード成功の被弾をシミュレート（`HandleIncomingHit(50, guarded=true)` → やられ + スタン+10） |
-| **L** | プレイヤー通常攻撃ヒットをシミュレート（HPダメージ + スタン蓄積 +15） |
+| **N** | ガード成功の被弾をシミュレート（`HandleIncomingHit(50, guarded=true)` → やられ + スタン+10） |
+| **M** | プレイヤー通常攻撃ヒットをシミュレート（HPダメージ + スタン蓄積 +15） |
 
 `DebugTriggerStun` / `DebugTriggerHitstun` / `DebugTriggerDead` は BlueprintCallable なので BP からも呼べる。
-本番では `BP_Enemy` の `bEnableDebugKeys` を false に。
+Shipping ビルドではコードごと除外されるため、`bEnableDebugKeys` を切り替える必要はない。
 
 ## `BP_Enemy` の現状（このブランチで実施済み）
 

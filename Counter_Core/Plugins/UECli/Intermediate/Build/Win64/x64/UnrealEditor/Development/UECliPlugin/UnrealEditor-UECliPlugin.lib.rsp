@@ -6,7 +6,7 @@
 /NAME:"UnrealEditor-UECliPlugin.dll"
 /IGNORE:4221
 /NODEFAULTLIB
-"C:/Users/koyo/Desktop/CC/Counter_Core/Intermediate/Build/Win64/x64/CounterCoreEditor/Development/UnrealEd/SharedPCH.UnrealEd.Project.ValApi.ValExpApi.Cpp20.h.obj"
-"C:/Users/koyo/Desktop/CC/Counter_Core/Plugins/UECli/Intermediate/Build/Win64/x64/UnrealEditor/Development/UECliPlugin/Module.UECliPlugin.cpp.obj"
-"C:/Users/koyo/Desktop/CC/Counter_Core/Plugins/UECli/Intermediate/Build/Win64/x64/UnrealEditor/Development/UECliPlugin/Default.rc2.res"
-/OUT:"C:/Users/koyo/Desktop/CC/Counter_Core/Plugins/UECli/Intermediate/Build/Win64/x64/UnrealEditor/Development/UECliPlugin/UnrealEditor-UECliPlugin.lib"
+"C:/Develop/projects/Counter-Core/Counter_Core/Intermediate/Build/Win64/x64/CounterCoreEditor/Development/UnrealEd/SharedPCH.UnrealEd.Project.ValApi.ValExpApi.Cpp20.h.obj"
+"C:/Develop/projects/Counter-Core/Counter_Core/Plugins/UECli/Intermediate/Build/Win64/x64/UnrealEditor/Development/UECliPlugin/Module.UECliPlugin.cpp.obj"
+"C:/Develop/projects/Counter-Core/Counter_Core/Plugins/UECli/Intermediate/Build/Win64/x64/UnrealEditor/Development/UECliPlugin/Default.rc2.res"
+/OUT:"C:/Develop/projects/Counter-Core/Counter_Core/Plugins/UECli/Intermediate/Build/Win64/x64/UnrealEditor/Development/UECliPlugin/UnrealEditor-UECliPlugin.lib"

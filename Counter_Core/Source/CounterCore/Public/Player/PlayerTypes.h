@@ -141,10 +141,10 @@ struct FPlayerAttackRow : public FTableRowBase
 
 	/**
 	 * この Montage フレーム以降、コンボ受付済みなら EndTime を待たず次段へ（PG-08）。-1 で無効。
-	 * フレームは UPlayerActionComponent::FrameRate で秒換算。
+	 * フレームは UPlayerActionComponent::FrameRate で秒換算。小数点第 2 位まで指定可（例: 12.35）。
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack")
-	int32 InterruptibleStartFrame = -1;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack", meta = (Delta = "0.01"))
+	float InterruptibleStartFrame = -1.f;
 
 	/** Montage の再生速度（PG-09）。0 = EndTime に収まるよう自動調整（従来動作）。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Attack", meta = (ClampMin = "0"))

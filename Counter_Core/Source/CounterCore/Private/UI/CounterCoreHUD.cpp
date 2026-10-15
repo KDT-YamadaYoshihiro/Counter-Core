@@ -5,6 +5,7 @@
 #include "Player/PlayerActionComponent.h"
 #include "Enemy/MonsterCombatComponent.h"
 #include "Battle/BattleDirectorComponent.h"
+#include "CounterCoreDevMode.h"
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "Engine/Font.h"
@@ -489,6 +490,12 @@ void ACounterCoreHUD::DrawHUD()
 	{
 		DrawInGameMenu(BD, VW, VH);
 	}
+
+#if !UE_BUILD_SHIPPING
+	// 開発者モード（F1）。製品版ではこのブロックごとコンパイルされない。
+	CounterCoreDevMode::Tick(this);
+	CounterCoreDevMode::Draw(this, Canvas);
+#endif
 }
 
 void ACounterCoreHUD::DrawInGameMenu(UBattleDirectorComponent* BD, float VW, float VH)

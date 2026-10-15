@@ -11,6 +11,7 @@
 #include "Components/WidgetComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "CounterCoreDebug.h"
+#include "CounterCoreDevMode.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "GameFramework/PlayerController.h"
@@ -1078,6 +1079,10 @@ void AMonsterCharacterBase::StartDeathRagdoll()
 		return;
 	}
 	bRagdolled = true;
+	if (Combat)
+	{
+		Combat->OnDeathAnimFinished.Broadcast();
+	}
 	USkeletalMeshComponent* M = GetMesh();
 	if (!M)
 	{
@@ -1152,10 +1157,12 @@ void AMonsterCharacterBase::Tick(float Dt)
 {
 	Super::Tick(Dt);
 
+#if !UE_BUILD_SHIPPING
 	if (bEnableDebugKeys)
 	{
 		PollDebugKeys();
 	}
+#endif
 
 	switch (State)
 	{
@@ -1182,8 +1189,8 @@ void AMonsterCharacterBase::Tick(float Dt)
 
 void AMonsterCharacterBase::PollDebugKeys()
 {
-	// cc.Debug 0 でデバッグキー（U/I/O/K/L）とヒント表示をまとめて無効化。
-	if (!CounterCoreDebug::IsOnScreenDebugEnabled())
+	// デバッグキーは開発者モード（F1）中だけ有効。製品版では呼び出し自体がない（Tick 参照）。
+	if (!CounterCoreDevMode::IsActive())
 	{
 		return;
 	}

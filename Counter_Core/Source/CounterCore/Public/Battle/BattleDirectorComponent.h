@@ -80,6 +80,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Battle|Result", meta = (ClampMin = "0"))
 	float ResultTransitionDelay = 3.f;
 
+	/** 死亡による決着時: 死亡モーション完了（OnDeathAnimFinished）からリザルト表示までの待ち（秒）。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Battle|Result", meta = (ClampMin = "0"))
+	float ResultDelayAfterDeathAnim = 0.5f;
+
+	/** 死亡モーション完了の通知が来ない場合の保険（秒）。この時間でリザルトへ進む。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Battle|Result", meta = (ClampMin = "0.1"))
+	float DeathAnimMaxWait = 10.f;
+
 	UFUNCTION(BlueprintPure, Category = "Battle")
 	EBattleResult GetResult() const { return Result; }
 
@@ -159,7 +167,7 @@ protected:
 
 private:
 	void ResolveRefs();
-	void EndBattle(EBattleResult NewResult);
+	void EndBattle(EBattleResult NewResult, bool bWaitForDeathAnim = false);
 	void SetActorsFrozen(bool bFrozen);
 	void ShowResult();
 	void PollMenuInput();
@@ -168,6 +176,8 @@ private:
 
 	UFUNCTION() void HandlePlayerDied();
 	UFUNCTION() void HandleEnemyDied();
+	UFUNCTION() void HandleDeathAnimFinished();
+	void ScheduleShowResult(float Delay);
 	UFUNCTION() void HandleGuardSuccess();
 
 	EBattleResult Result = EBattleResult::InProgress;
@@ -176,6 +186,7 @@ private:
 	float IntroTimer = 0.f;
 	float ElapsedTime = 0.f;
 	int32 GuardSuccessCount = 0;
+	bool bWaitingDeathAnim = false;
 
 	// インゲームメニュー
 	bool bMenuOpen = false;

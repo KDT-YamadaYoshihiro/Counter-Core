@@ -165,6 +165,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Monster")
 	FMonsterSimpleEvent OnDied;
 
+	/** 死亡モーションの再生を終えた（ゲームクリア遷移の合図）。AMonsterCharacterBase が発火。 */
+	UPROPERTY(BlueprintAssignable, Category = "Monster")
+	FMonsterSimpleEvent OnDeathAnimFinished;
+
 protected:
 	virtual void BeginPlay() override;
 

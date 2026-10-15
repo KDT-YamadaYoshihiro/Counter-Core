@@ -53,6 +53,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|FX")
 	TObjectPtr<UAnimMontage> DeathMontage;
 
+	/** 死亡モーション終了後にループ再生する倒れ待機モーション。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|FX")
+	TObjectPtr<UAnimMontage> DeathIdleMontage;
+
+	/** 倒れ待機へ移ってから OnDeathAnimFinished（ゲームオーバー遷移）までの秒数。 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|Death", meta = (ClampMin = "0"))
+	float DeathIdleHoldTime = 1.f;
+
 	/** 気絶モーション。 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Player|FX")
 	TObjectPtr<UAnimMontage> StunMontage;
@@ -187,6 +195,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Player|Rush")
 	void SetRushActive(bool bActive);
 
+	/** 開発者モード用: 即死させる（Shipping では何もしない）。 */
+	void DevForceDeath();
+
 	// --- デリゲート ---
 
 	UPROPERTY(BlueprintAssignable, Category = "Player") FPlayerDamaged OnDamaged;
@@ -196,6 +207,8 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Player") FPlayerCombatSimpleEvent OnStunned;
 	UPROPERTY(BlueprintAssignable, Category = "Player") FPlayerCombatSimpleEvent OnStunRecovered;
 	UPROPERTY(BlueprintAssignable, Category = "Player") FPlayerCombatSimpleEvent OnDied;
+	/** 死亡モーション → 倒れ待機（DeathIdleHoldTime）を終えた。ゲームオーバー遷移の合図。 */
+	UPROPERTY(BlueprintAssignable, Category = "Player") FPlayerCombatSimpleEvent OnDeathAnimFinished;
 
 protected:
 	virtual void BeginPlay() override;
@@ -207,6 +220,10 @@ private:
 	void EndHitReact();
 	void PlayMontage(UAnimMontage* Montage) const;
 	void EnterDeath();
+	void HandleDeathMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+	void FinishDeathAnim();
+
+	FTimerHandle DeathIdleTimer;
 	void PlayDamagedShake() const;
 
 	EPlayerCombatState State = EPlayerCombatState::Normal;

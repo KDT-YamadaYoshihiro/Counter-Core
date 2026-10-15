@@ -160,11 +160,73 @@ void UPlayerCombatComponent::EnterDeath()
 			Anim->StopAllMontages(0.1f);
 		}
 	}
-	PlayMontage(DeathMontage);
+	bool bDeathMontagePlaying = false;
+	if (USkeletalMeshComponent* Mesh = GetOwner() ? GetOwner()->FindComponentByClass<USkeletalMeshComponent>() : nullptr)
+	{
+		UAnimInstance* Anim = Mesh->GetAnimInstance();
+		if (Anim && DeathMontage && Anim->Montage_Play(DeathMontage) > 0.f)
+		{
+			FOnMontageEnded EndDel;
+			EndDel.BindUObject(this, &UPlayerCombatComponent::HandleDeathMontageEnded);
+			Anim->Montage_SetEndDelegate(EndDel, DeathMontage);
+			bDeathMontagePlaying = true;
+		}
+	}
 	UCombatFeedbackLibrary::PlayCombatFeedback(this, DeathFeedback, GetOwner(), nullptr,
 		GetOwner() ? GetOwner()->GetActorLocation() : FVector::ZeroVector);
 
-	OnDied.Broadcast(); // 敗北判定・リザルト遷移は BattleDirector（ResultTransitionDelay）
+	OnDied.Broadcast(); // 敗北判定は BattleDirector。リザルト遷移は OnDeathAnimFinished 後。
+
+	if (!bDeathMontagePlaying)
+	{
+		HandleDeathMontageEnded(nullptr, false);
+	}
+}
+
+void UPlayerCombatComponent::DevForceDeath()
+{
+#if !UE_BUILD_SHIPPING
+	if (State == EPlayerCombatState::Dead)
+	{
+		return;
+	}
+	Hp = 0;
+	OnHpChanged.Broadcast(Hp, MaxHp);
+	EnterDeath();
+#endif
+}
+
+void UPlayerCombatComponent::HandleDeathMontageEnded(UAnimMontage* /*Montage*/, bool /*bInterrupted*/)
+{
+	// 死亡モーション後は倒れ待機をループ再生し、DeathIdleHoldTime 後にゲームオーバーへ。
+	if (DeathIdleMontage && GetOwner())
+	{
+		if (USkeletalMeshComponent* Mesh = GetOwner()->FindComponentByClass<USkeletalMeshComponent>())
+		{
+			if (UAnimInstance* Anim = Mesh->GetAnimInstance())
+			{
+				if (Anim->Montage_Play(DeathIdleMontage) > 0.f && DeathIdleMontage->CompositeSections.Num() > 0)
+				{
+					const FName Section = DeathIdleMontage->GetSectionName(0);
+					Anim->Montage_SetNextSection(Section, Section, DeathIdleMontage);
+				}
+			}
+		}
+	}
+	UWorld* World = GetWorld();
+	if (World && DeathIdleHoldTime > 0.f)
+	{
+		World->GetTimerManager().SetTimer(DeathIdleTimer, this, &UPlayerCombatComponent::FinishDeathAnim, DeathIdleHoldTime, false);
+	}
+	else
+	{
+		FinishDeathAnim();
+	}
+}
+
+void UPlayerCombatComponent::FinishDeathAnim()
+{
+	OnDeathAnimFinished.Broadcast();
 }
 
 void UPlayerCombatComponent::SetCombatState(EPlayerCombatState NewState)
