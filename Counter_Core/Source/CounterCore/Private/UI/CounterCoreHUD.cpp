@@ -18,6 +18,8 @@
 #include "Blueprint/UserWidget.h"
 #include "TimerManager.h"
 #include "Engine/Texture2D.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Fonts/FontMeasure.h"
 
 namespace
 {
@@ -29,6 +31,49 @@ namespace
 			Cached = LoadObject<UFont>(nullptr, TEXT("/Engine/EngineFonts/Roboto.Roboto"));
 		}
 		return Cached.Get();
+	}
+
+	/** DrawLabel と同じフォント・サイズで描いたときの文字列の幅（px）。 */
+	static float MeasureLabelWidth(const FString& Text, float Scale, float UIScale)
+	{
+		const int32 Px = FMath::Max(6, FMath::RoundToInt(18.f * Scale * UIScale));
+		UFont* UIFont = HudUIFont();
+		if (UIFont && FSlateApplication::IsInitialized())
+		{
+			const TSharedRef<FSlateFontMeasure> Measure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
+			return Measure->Measure(Text, FSlateFontInfo(UIFont, Px)).X;
+		}
+		return Text.Len() * Px; // 全角幅で見積もる
+	}
+
+	/** 操作説明表示中に隠したビューポート上の UMG。UMG は Canvas より常に前面に出るため、一時的に隠す。 */
+	static TArray<TPair<TWeakObjectPtr<UUserWidget>, ESlateVisibility>> GHiddenForControlGuide;
+
+	static void SetViewportWidgetsHiddenForGuide(UWorld* World, bool bHide)
+	{
+		if (bHide)
+		{
+			for (TObjectIterator<UUserWidget> It; It; ++It)
+			{
+				UUserWidget* W = *It;
+				if (W && W->GetWorld() == World && W->IsInViewport() && W->GetVisibility() != ESlateVisibility::Hidden)
+				{
+					GHiddenForControlGuide.Emplace(W, W->GetVisibility());
+					W->SetVisibility(ESlateVisibility::Hidden);
+				}
+			}
+		}
+		else if (GHiddenForControlGuide.Num() > 0)
+		{
+			for (const TPair<TWeakObjectPtr<UUserWidget>, ESlateVisibility>& Entry : GHiddenForControlGuide)
+			{
+				if (UUserWidget* W = Entry.Key.Get())
+				{
+					W->SetVisibility(Entry.Value);
+				}
+			}
+			GHiddenForControlGuide.Reset();
+		}
 	}
 }
 
@@ -201,7 +246,8 @@ void ACounterCoreHUD::DrawNineSlice(UTexture2D* Tex, float X, float Y, float W, 
 void ACounterCoreHUD::DrawControlGuide(float VW, float VH)
 {
 	const float S = UIScale;
-	DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.7f), 0.f, 0.f, VW, VH);
+	// 背景のステージが透けると読みにくいので、ほぼ不透明で塗りつぶす。
+	DrawRect(FLinearColor(0.02f, 0.03f, 0.05f, 0.96f), 0.f, 0.f, VW, VH);
 	const float CX = VW * 0.5f;
 	DrawLabel(ControlGuideTitle.ToString(), CX - 70.f * S, VH * 0.12f, FLinearColor::White, 2.0f);
 	DrawGaugeImage(ControllerImage, VW, VH);
@@ -211,6 +257,16 @@ void ACounterCoreHUD::DrawControlGuide(float VW, float VH)
 		TArray<FControlGuideRow*> Rows;
 		ControlGuideTable->GetAllRows<FControlGuideRow>(TEXT("ControlGuide"), Rows);
 		const float X0 = VW * ControlGuideTableOrigin.X;
+		// 操作名の列はボタン名の最大幅より右に置き、長いボタン名と重ならないようにする。
+		float ActionX = X0 + ControlGuideActionColumnX * S;
+		for (const FControlGuideRow* Row : Rows)
+		{
+			if (Row)
+			{
+				const float IconW = Row->ButtonIcon ? (ControlGuideIconSize.X + 8.f) * S : 0.f;
+				ActionX = FMath::Max(ActionX, X0 + IconW + MeasureLabelWidth(Row->ButtonName.ToString(), ControlGuideTextScale, S) + 32.f * S);
+			}
+		}
 		for (int32 i = 0; i < Rows.Num(); ++i)
 		{
 			const FControlGuideRow* Row = Rows[i];
@@ -226,7 +282,7 @@ void ACounterCoreHUD::DrawControlGuide(float VW, float VH)
 				TextX += (ControlGuideIconSize.X + 8.f) * S;
 			}
 			DrawLabel(Row->ButtonName.ToString(), TextX, Y, FLinearColor(1.f, 0.9f, 0.4f), ControlGuideTextScale);
-			DrawLabel(Row->ActionName.ToString(), X0 + ControlGuideActionColumnX * S, Y, FLinearColor(0.9f, 0.9f, 0.92f), ControlGuideTextScale);
+			DrawLabel(Row->ActionName.ToString(), ActionX, Y, FLinearColor(0.9f, 0.9f, 0.92f), ControlGuideTextScale);
 		}
 	}
 	DrawLabel(ControlGuideBackHint.ToString(), CX - 70.f * S, VH * 0.9f, FLinearColor(0.6f, 0.6f, 0.65f), 1.1f);
@@ -486,6 +542,7 @@ void ACounterCoreHUD::DrawHUD()
 	}
 
 	// ---- インゲームメニュー（仕様書 UI「メニュー」）----
+	SetViewportWidgetsHiddenForGuide(GetWorld(), BD && BD->IsMenuOpen() && BD->IsControlsPanelOpen());
 	if (BD && BD->IsMenuOpen())
 	{
 		DrawInGameMenu(BD, VW, VH);
@@ -502,6 +559,13 @@ void ACounterCoreHUD::DrawInGameMenu(UBattleDirectorComponent* BD, float VW, flo
 {
 	const double RT = FApp::GetCurrentTime(); // 実時間（メニュー中は時間停止のため）
 	const float S = UIScale;
+
+	// 操作説明パネル（メニューの文字が透けないよう、メニューより先に判定して単独で描く）
+	if (BD->IsControlsPanelOpen())
+	{
+		DrawControlGuide(VW, VH);
+		return;
+	}
 
 	// パネル（画面左）
 	const float PW = VW * 0.36f;
@@ -530,13 +594,6 @@ void ACounterCoreHUD::DrawInGameMenu(UBattleDirectorComponent* BD, float VW, flo
 			const float Sway = FMath::Sin((float)RT * 6.f) * 10.f * S;
 			DrawLabel(TEXT("<"), TextX + 150.f * S + Sway, ItemY, FLinearColor(1.f, 0.25f, 0.25f), 1.9f);
 		}
-	}
-
-	// 操作説明パネル
-	if (BD->IsControlsPanelOpen())
-	{
-		DrawControlGuide(VW, VH);
-		return;
 	}
 
 	// あきらめる確認ダイアログ
