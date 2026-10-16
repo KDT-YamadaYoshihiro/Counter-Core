@@ -1,0 +1,44 @@
+{
+	"RemapUnityFiles": 
+	{
+		"Module.UECliPlugin.cpp.obj": [
+			"PerModuleInline.gen.cpp.obj",
+			"UECliBlueprintAsset.cpp.obj",
+			"UECliBlueprintCompiler.cpp.obj",
+			"UECliBlueprintComponents.cpp.obj",
+			"UECliBlueprintEditor.cpp.obj",
+			"UECliBlueprintReader.cpp.obj",
+			"UECliNodeSearch.cpp.obj",
+			"UECliPinType.cpp.obj",
+			"UECliEventHub.cpp.obj",
+			"UECliBlueprintHandlers.cpp.obj",
+			"UECliCodeHandlers.cpp.obj",
+			"UECliEditorHandlers.cpp.obj",
+			"UECliJobHandlers.cpp.obj",
+			"UECliLandscapeHandlers.cpp.obj",
+			"UECliLevelHandlers.cpp.obj",
+			"UECliMaterialHandlers.cpp.obj",
+			"UECliNiagaraHandlers.cpp.obj",
+			"UECliObjectHandlers.cpp.obj",
+			"UECliProjectHandlers.cpp.obj",
+			"UECliRuntimeHandlers.cpp.obj",
+			"UECliWidgetHandlers.cpp.obj",
+			"UECliHttpServer.cpp.obj",
+			"UECliHttpTypes.cpp.obj",
+			"UECliBuiltinJobs.cpp.obj",
+			"UECliJobManager.cpp.obj",
+			"UECliLandscapeOps.cpp.obj",
+			"UECliLevelOps.cpp.obj",
+			"UECliNiagaraOps.cpp.obj",
+			"UECliObjectOps.cpp.obj",
+			"UECliProjectOps.cpp.obj",
+			"UECliLogCapture.cpp.obj",
+			"UECliJobTests.cpp.obj",
+			"UECliObjectOpsTests.cpp.obj",
+			"UECliSelfTests.cpp.obj",
+			"UECliPluginModule.cpp.obj",
+			"UECliServices.cpp.obj",
+			"UECliWidgetOps.cpp.obj"
+		]
+	}
+}

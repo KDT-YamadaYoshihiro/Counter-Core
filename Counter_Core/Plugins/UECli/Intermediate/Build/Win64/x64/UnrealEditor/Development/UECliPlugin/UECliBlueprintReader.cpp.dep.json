@@ -1,0 +1,40 @@
+{
+    "Version": "1.2",
+    "Data": {
+        "Source": "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\blueprint\\uecliblueprintreader.cpp",
+        "ProvidedModule": "",
+        "PCH": "c:\\develop\\projects\\counter-core\\counter_core\\intermediate\\build\\win64\\x64\\countercoreeditor\\development\\unrealed\\sharedpch.unrealed.project.valapi.valexpapi.cpp20.h.pch",
+        "Includes": [
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\intermediate\\build\\win64\\x64\\unrealeditor\\development\\uecliplugin\\definitions.uecliplugin.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\blueprint\\uecliblueprintreader.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\editor\\animgraph\\public\\animstatenodebase.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\intermediate\\build\\win64\\unrealeditor\\inc\\animgraph\\uht\\animstatenodebase.generated.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\editor\\animgraph\\public\\animstatetransitionnode.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\intermediate\\build\\win64\\unrealeditor\\inc\\animgraph\\uht\\animstatetransitionnode.generated.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\assetregistry\\public\\assetregistry\\assetregistrymodule.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\assetregistry\\public\\assetregistry\\iassetregistry.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\runtime\\coreuobject\\public\\misc\\assetregistryinterface.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\intermediate\\build\\win64\\unrealeditor\\inc\\assetregistry\\uht\\iassetregistry.generated.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\editor\\blueprintgraph\\classes\\k2node_callfunction.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\editor\\kismetcompiler\\public\\kismetcompilermisc.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\editor\\kismetcompiler\\public\\bpterminal.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\editor\\kismetcompiler\\public\\blueprintcompiledstatement.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\intermediate\\build\\win64\\unrealeditor\\inc\\blueprintgraph\\uht\\k2node_callfunction.generated.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\editor\\blueprintgraph\\classes\\k2node_dynamiccast.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\intermediate\\build\\win64\\unrealeditor\\inc\\blueprintgraph\\uht\\k2node_dynamiccast.generated.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\editor\\blueprintgraph\\classes\\k2node_event.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\editor\\blueprintgraph\\classes\\k2node_eventnodeinterface.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\intermediate\\build\\win64\\unrealeditor\\inc\\blueprintgraph\\uht\\k2node_eventnodeinterface.generated.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\intermediate\\build\\win64\\unrealeditor\\inc\\blueprintgraph\\uht\\k2node_event.generated.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\editor\\blueprintgraph\\classes\\k2node_macroinstance.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\editor\\blueprintgraph\\classes\\k2node_tunnel.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\intermediate\\build\\win64\\unrealeditor\\inc\\blueprintgraph\\uht\\k2node_tunnel.generated.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\intermediate\\build\\win64\\unrealeditor\\inc\\blueprintgraph\\uht\\k2node_macroinstance.generated.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\source\\editor\\blueprintgraph\\classes\\k2node_variable.h",
+            "c:\\program files\\epic games\\ue_5.7\\engine\\intermediate\\build\\win64\\unrealeditor\\inc\\blueprintgraph\\uht\\k2node_variable.generated.h",
+            "c:\\develop\\projects\\counter-core\\counter_core\\plugins\\uecli\\source\\uecliplugin\\private\\ueclilog.h"
+        ],
+        "ImportedModules": [],
+        "ImportedHeaderUnits": []
+    }
+}
